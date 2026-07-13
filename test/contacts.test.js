@@ -44,6 +44,15 @@ test('short rows are padded with empty fields', () => {
   assert.equal(contacts[0].phone, null);
 });
 
+test('duplicate headers are rejected (would silently collapse columns)', () => {
+  const { error } = buildContacts([
+    ['name', 'notes', 'Notes', 'phone'],
+    ['Ada', 'a', 'b', '4155550134'],
+  ]);
+  assert.match(error, /Duplicate column header/);
+  assert.match(error, /Notes/);
+});
+
 test('empty sheet and header-only sheet are errors', () => {
   assert.ok(buildContacts([]).error);
   assert.ok(buildContacts([['firstName', 'phone']]).error);

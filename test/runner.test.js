@@ -86,6 +86,38 @@ test('failure modes: unknown var, empty var, bad phone, unregistered, send error
   assert.equal(wa.sent.length, 1);
 });
 
+test('report is written incrementally during the run (crash-safe)', async () => {
+  const wa = stubWa();
+  const dir = tmpReports();
+  const runner = createRunner({ wa, reportsDir: dir });
+  let midRunReport = null;
+  await runner.start({
+    contacts: [
+      makeContact(1, { n: 'a' }, '+14155550134'),
+      makeContact(2, { n: 'b' }, '+14155550135'),
+    ],
+    template: 'Hi {{n}}',
+    delayMinMs: 1,
+    delayMaxMs: 2,
+    onProgress: (e) => {
+      if (e.type === 'progress' && e.index === 0) {
+        // After the first contact, the report file must already exist on disk.
+        const file = fs.readdirSync(dir).find((f) => f.startsWith('run-'));
+        midRunReport = JSON.parse(fs.readFileSync(path.join(dir, file), 'utf8'));
+      }
+    },
+  });
+  assert.ok(midRunReport, 'report file existed mid-run');
+  assert.equal(midRunReport.status, 'running');
+  assert.equal(midRunReport.results.length, 1);
+  assert.equal(midRunReport.summary.finishedAt, null);
+  const file = fs.readdirSync(dir).find((f) => f.startsWith('run-'));
+  const finalReport = JSON.parse(fs.readFileSync(path.join(dir, file), 'utf8'));
+  assert.equal(finalReport.status, 'complete');
+  assert.equal(finalReport.summary.sent, 2);
+  assert.ok(finalReport.summary.finishedAt);
+});
+
 test('cancel stops sending and marks the rest cancelled', async () => {
   const wa = stubWa();
   const runner = createRunner({ wa, reportsDir: tmpReports() });

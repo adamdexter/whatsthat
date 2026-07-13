@@ -34,6 +34,20 @@ const app = express();
 app.use(express.json({ limit: '4mb' }));
 app.use(express.static(path.join(ROOT, 'public')));
 
+const escapeHtml = (s) =>
+  String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+
+// Reject state-changing requests from other origins (a malicious web page
+// could otherwise fire POSTs at localhost). GET navigations (OAuth callback)
+// don't carry an Origin header, and same-origin fetches match.
+const ALLOWED_ORIGINS = new Set([`http://localhost:${PORT}`, `http://127.0.0.1:${PORT}`]);
+app.use('/api', (req, res, next) => {
+  if (req.method !== 'GET' && req.headers.origin && !ALLOWED_ORIGINS.has(req.headers.origin)) {
+    return res.status(403).json({ error: 'Cross-origin requests are not allowed' });
+  }
+  next();
+});
+
 // ---------- Server-sent events ----------
 const sseClients = new Set();
 function broadcast(event, data) {
@@ -56,6 +70,8 @@ app.get('/api/events', (req, res) => {
 wa.onUpdate((state) => broadcast('wa_state', state));
 
 // ---------- App state ----------
+let lastRun = null; // most recent run_done event, for UI recovery after an SSE drop
+
 app.get('/api/state', (req, res) => {
   res.json({
     mock: MOCK,
@@ -63,6 +79,7 @@ app.get('/api/state', (req, res) => {
     google: sheetsApi.status(),
     draft: draftStore.read(),
     running: runner.isRunning(),
+    lastRun,
   });
 });
 
@@ -70,7 +87,7 @@ app.post('/api/draft', (req, res) => {
   const allowed = ['template', 'sheetUrl', 'tabName', 'delayMinMs', 'delayMaxMs'];
   const patch = {};
   for (const key of allowed) {
-    if (key in req.body) patch[key] = req.body[key];
+    if (key in (req.body || {})) patch[key] = req.body[key];
   }
   res.json(draftStore.patch(patch));
 });
@@ -99,7 +116,7 @@ app.get('/api/google/callback', async (req, res) => {
     broadcast('google_status', sheetsApi.status());
     res.send('<body style="font-family:sans-serif;padding:40px"><h2>✅ Google connected</h2><p>You can close this tab and return to WhatsThat.</p></body>');
   } catch (err) {
-    res.status(400).send(`<body style="font-family:sans-serif;padding:40px"><h2>❌ Google connection failed</h2><p>${String(err.message)}</p></body>`);
+    res.status(400).send(`<body style="font-family:sans-serif;padding:40px"><h2>❌ Google connection failed</h2><p>${escapeHtml(err.message)}</p></body>`);
   }
 });
 
@@ -172,6 +189,7 @@ app.post('/api/run', (req, res) => {
           const { contact, ...rest } = event;
           broadcast('run_progress', { ...rest, phone: contact.phone });
         } else if (event.type === 'done') {
+          lastRun = event;
           broadcast('run_done', event);
         }
       },

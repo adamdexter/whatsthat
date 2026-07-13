@@ -1,5 +1,6 @@
 'use strict';
 
+const path = require('path');
 const QRCode = require('qrcode');
 
 // Both implementations expose the same interface:
@@ -19,7 +20,9 @@ function createRealWhatsApp() {
   const emit = () => listeners.forEach((cb) => cb({ ...state }));
 
   const client = new Client({
-    authStrategy: new LocalAuth({ dataPath: './.wwebjs_auth' }),
+    // Anchored to the repo so running from any CWD reuses the same session
+    // (and never drops credentials outside the gitignore's protection).
+    authStrategy: new LocalAuth({ dataPath: path.join(__dirname, '..', '.wwebjs_auth') }),
     puppeteer: {
       headless: true,
       args: ['--no-sandbox', '--disable-setuid-sandbox'],

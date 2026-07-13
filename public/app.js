@@ -192,10 +192,12 @@ function renderContacts() {
       </tr>`;
     })
     .join('');
+  const validIds = S.contacts.filter((c) => c.phone).map((c) => c.id);
+  const allSelected = validIds.length > 0 && validIds.every((id) => S.selected.has(id));
   wrap.innerHTML = `
     <table>
       <thead><tr>
-        <th><input type="checkbox" id="check-all" checked /></th>
+        <th><input type="checkbox" id="check-all" ${allSelected ? 'checked' : ''} /></th>
         ${headers.filter((h) => h.toLowerCase() !== 'phone').map((h) => `<th>${esc(h)}</th>`).join('')}
         <th>Phone</th>
       </tr></thead>
@@ -230,6 +232,12 @@ function renderCountLine() {
   line.innerHTML =
     `<b>${S.selected.size}</b> of ${S.contacts.length} contacts selected` +
     (invalid ? ` — <span class="st-failed">${invalid} with invalid phone numbers (excluded)</span>` : '');
+  // Keep the header checkbox honest as individual rows are toggled.
+  const checkAll = $('check-all');
+  if (checkAll) {
+    const validIds = S.contacts.filter((c) => c.phone).map((c) => c.id);
+    checkAll.checked = validIds.length > 0 && validIds.every((id) => S.selected.has(id));
+  }
 }
 
 // ---------- Card 4: Message ----------
@@ -266,11 +274,17 @@ function renderPreviewSelect() {
 }
 
 function displayName(c) {
-  const get = (n) => {
-    for (const k of Object.keys(c.fields)) if (k.trim().toLowerCase() === n) return c.fields[k];
+  const get = (...names) => {
+    for (const want of names)
+      for (const k of Object.keys(c.fields))
+        if (k.trim().toLowerCase() === want && String(c.fields[k]).trim()) return String(c.fields[k]).trim();
     return '';
   };
-  return [get('firstname'), get('lastname')].filter(Boolean).join(' ') || c.phone || `row ${c.id + 1}`;
+  return (
+    [get('firstname', 'first name'), get('lastname', 'last name')].filter(Boolean).join(' ') ||
+    c.phone ||
+    `row ${c.id + 1}`
+  );
 }
 
 function renderPreviewBubble() {
@@ -414,24 +428,33 @@ async function startRun() {
   $('run-confirm').classList.add('hidden');
   const contacts = S.contacts.filter((c) => S.selected.has(c.id));
   const { delayMinMs, delayMaxMs } = getDelaysMs();
+  // Reset the progress UI before the request — the first SSE progress event
+  // can arrive before the fetch resolves and must not be wiped.
+  S.progressCount = 0;
+  S.totalToSend = contacts.length;
+  $('run-report').classList.add('hidden');
+  $('run-report').innerHTML = '';
+  $('progress-list').innerHTML = '';
+  $('progress-bar').style.width = '0%';
+  $('progress-label').textContent = `0 / ${contacts.length}`;
+  $('run-progress').classList.remove('hidden');
   try {
     await api('/api/run', {
       method: 'POST',
       body: { contacts, template: $('template').value, delayMinMs, delayMaxMs },
     });
     S.running = true;
-    S.progressCount = 0;
-    S.totalToSend = contacts.length;
-    $('run-report').classList.add('hidden');
-    $('run-report').innerHTML = '';
-    $('progress-list').innerHTML = '';
-    $('progress-bar').style.width = '0%';
-    $('progress-label').textContent = `0 / ${contacts.length}`;
-    $('run-progress').classList.remove('hidden');
-    renderRunButton();
   } catch (err) {
-    alert(err.message);
+    $('run-progress').classList.add('hidden');
+    showRunError(err.message);
   }
+  renderRunButton();
+}
+
+function showRunError(message) {
+  const el = $('run-report');
+  el.innerHTML = `<div class="error">Run failed: ${esc(message)}</div>`;
+  el.classList.remove('hidden');
 }
 
 function onRunProgress(e) {
@@ -515,6 +538,8 @@ async function boot() {
   if (S.running) {
     $('run-progress').classList.remove('hidden');
     $('progress-label').textContent = 'Run in progress — new events will appear here.';
+  } else if (state.lastRun) {
+    onRunDone(state.lastRun); // page reloaded after a run finished — show its result
   }
 
   // Live events
@@ -533,9 +558,27 @@ async function boot() {
   es.addEventListener('run_done', (e) => onRunDone(JSON.parse(e.data)));
   es.addEventListener('run_error', (e) => {
     S.running = false;
-    alert(`Run error: ${JSON.parse(e.data).error}`);
+    showRunError(JSON.parse(e.data).error);
     renderRunButton();
   });
+  // EventSource auto-reconnects but replays nothing — a run_done broadcast
+  // during a dropped connection would otherwise strand the UI in "Sending…".
+  es.onopen = async () => {
+    try {
+      const st = await api('/api/state');
+      S.wa = st.wa;
+      S.google = st.google;
+      if (S.running && !st.running) {
+        if (st.lastRun) onRunDone(st.lastRun);
+        else S.running = false;
+      }
+      renderPills();
+      renderWa();
+      renderRunButton();
+    } catch {
+      /* server unreachable; EventSource will retry */
+    }
+  };
 
   // Wire inputs
   $('template').addEventListener('input', onTemplateChanged);

@@ -4,10 +4,11 @@ const { google } = require('googleapis');
 
 const SCOPES = ['https://www.googleapis.com/auth/spreadsheets.readonly'];
 
-// Accepts a full Google Sheets URL or a bare spreadsheet id.
+// Accepts a full Google Sheets URL (including multi-account /u/N/ URLs) or a
+// bare spreadsheet id.
 function extractSpreadsheetId(input) {
   const s = String(input || '').trim();
-  const m = s.match(/\/spreadsheets\/d\/([a-zA-Z0-9-_]+)/);
+  const m = s.match(/\/spreadsheets\/(?:u\/\d+\/)?d\/([a-zA-Z0-9-_]+)/);
   if (m) return m[1];
   if (/^[a-zA-Z0-9-_]{20,}$/.test(s)) return s;
   return null;

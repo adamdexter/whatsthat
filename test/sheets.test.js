@@ -15,6 +15,13 @@ test('extracts id from full URLs', () => {
   );
 });
 
+test('extracts id from multi-account /u/N/ URLs', () => {
+  assert.equal(
+    extractSpreadsheetId('https://docs.google.com/spreadsheets/u/1/d/1AbC_dEf-123456789012345678901234567890/edit'),
+    '1AbC_dEf-123456789012345678901234567890'
+  );
+});
+
 test('accepts a bare id', () => {
   assert.equal(extractSpreadsheetId('1AbC_dEf-123456789012345678901234567890'), '1AbC_dEf-123456789012345678901234567890');
 });

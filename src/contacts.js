@@ -19,6 +19,23 @@ function buildContacts(values) {
       error: `No "phone" column found in the header row. Found: ${headers.filter(Boolean).join(', ') || '(nothing)'}`,
     };
   }
+  // Duplicate headers would silently collapse to one column and could send
+  // messages built from the wrong data — refuse them outright.
+  const seen = new Set();
+  const dups = new Set();
+  for (const h of headers) {
+    if (!h) continue;
+    const key = h.toLowerCase();
+    if (seen.has(key)) dups.add(h);
+    seen.add(key);
+  }
+  if (dups.size) {
+    return {
+      headers: headers.filter(Boolean),
+      contacts: [],
+      error: `Duplicate column header(s): ${[...dups].join(', ')} — rename them in the sheet so each {{variable}} is unambiguous`,
+    };
+  }
   if (values.length < 2) {
     return { headers: headers.filter(Boolean), contacts: [], error: 'No contact rows below the header row' };
   }

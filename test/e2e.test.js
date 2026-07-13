@@ -115,12 +115,16 @@ test('full run: sends, reports failures, writes report', async () => {
   assert.equal(status, 200, JSON.stringify(data));
   assert.equal(data.total, 4);
 
-  // Wait for the run to finish, then check the report list.
+  // Wait for the run to finish — the report file exists from the first
+  // contact onward (crash-safety), so wait for status 'complete'.
   const reportName = await waitFor(async () => {
     const { data: d } = await api('/api/reports');
-    return d.reports && d.reports[0];
+    if (!d.reports || !d.reports[0]) return null;
+    const { data: r } = await api(`/api/reports/${d.reports[0]}`);
+    return r.status === 'complete' ? d.reports[0] : null;
   });
   const { data: report } = await api(`/api/reports/${reportName}`);
+  assert.equal(report.status, 'complete');
   assert.equal(report.summary.total, 4);
   assert.equal(report.summary.sent, 1); // only Ada
   assert.equal(report.summary.failed, 3);
@@ -146,4 +150,37 @@ test('draft persistence roundtrip', async () => {
   await api('/api/draft', { method: 'POST', body: { template: 'Hello {{firstName}}', sheetUrl: 'https://example' } });
   const { data } = await api('/api/state');
   assert.equal(data.draft.template, 'Hello {{firstName}}');
+});
+
+test('state exposes lastRun after a completed run (SSE-drop recovery)', async () => {
+  const { data } = await api('/api/state');
+  assert.ok(data.lastRun, 'lastRun present');
+  assert.equal(data.lastRun.summary.total, 4);
+  assert.ok(data.lastRun.reportFile);
+});
+
+test('cross-origin POSTs are rejected', async () => {
+  const res = await fetch(`${BASE}/api/run/cancel`, {
+    method: 'POST',
+    headers: { Origin: 'https://evil.example' },
+  });
+  assert.equal(res.status, 403);
+  // Same-origin passes
+  const ok = await fetch(`${BASE}/api/run/cancel`, {
+    method: 'POST',
+    headers: { Origin: `http://127.0.0.1:${PORT}` },
+  });
+  assert.equal(ok.status, 200);
+});
+
+test('draft endpoint survives a body-less POST', async () => {
+  const res = await fetch(`${BASE}/api/draft`, { method: 'POST' });
+  assert.equal(res.status, 200);
+});
+
+test('OAuth callback escapes error text (no reflected XSS)', async () => {
+  const res = await fetch(`${BASE}/api/google/callback?error=<script>alert(1)</script>`);
+  const body = await res.text();
+  assert.ok(!body.includes('<script>alert(1)</script>'), 'script tag must be escaped');
+  assert.ok(body.includes('&lt;script&gt;'), 'escaped form present');
 });

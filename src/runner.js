@@ -25,6 +25,43 @@ function createRunner({ wa, reportsDir }) {
     const startedAt = new Date();
     const results = [];
 
+    // The report is rewritten after every contact so that a crash or Ctrl-C
+    // mid-run never loses the record of who was already messaged.
+    const reportFile = `run-${startedAt.toISOString().replace(/[:.]/g, '-')}.json`;
+    const writeReport = (status) => {
+      try {
+        fs.mkdirSync(reportsDir, { recursive: true });
+        fs.writeFileSync(
+          path.join(reportsDir, reportFile),
+          JSON.stringify(
+            {
+              status,
+              summary: {
+                startedAt: startedAt.toISOString(),
+                finishedAt: status === 'complete' ? new Date().toISOString() : null,
+                total: contacts.length,
+                sent: results.filter((r) => r.status === 'sent').length,
+                failed: results.filter((r) => r.status === 'failed').length,
+                cancelled: results.filter((r) => r.status === 'cancelled').length,
+              },
+              template,
+              results: results.map(({ contact, ...rest }) => ({
+                ...rest,
+                phone: contact.phone,
+                fields: contact.fields,
+              })),
+            },
+            null,
+            2
+          )
+        );
+        return true;
+      } catch {
+        // Report persistence must never mask the run result.
+        return false;
+      }
+    };
+
     try {
       for (let i = 0; i < contacts.length; i++) {
         const contact = contacts[i];
@@ -33,6 +70,7 @@ function createRunner({ wa, reportsDir }) {
         if (run.cancel) {
           const entry = { index: i, total: contacts.length, name, contact, status: 'cancelled' };
           results.push(entry);
+          writeReport('running');
           onProgress({ type: 'progress', ...entry });
           continue;
         }
@@ -40,6 +78,7 @@ function createRunner({ wa, reportsDir }) {
         const report = (status, extra = {}) => {
           const entry = { index: i, total: contacts.length, name, contact, status, ...extra };
           results.push(entry);
+          writeReport('running');
           onProgress({ type: 'progress', ...entry });
         };
 
@@ -86,33 +125,10 @@ function createRunner({ wa, reportsDir }) {
       cancelled: results.filter((r) => r.status === 'cancelled').length,
     };
 
-    let reportFile = null;
-    try {
-      fs.mkdirSync(reportsDir, { recursive: true });
-      reportFile = `run-${startedAt.toISOString().replace(/[:.]/g, '-')}.json`;
-      fs.writeFileSync(
-        path.join(reportsDir, reportFile),
-        JSON.stringify(
-          {
-            summary,
-            template,
-            results: results.map(({ contact, ...rest }) => ({
-              ...rest,
-              phone: contact.phone,
-              fields: contact.fields,
-            })),
-          },
-          null,
-          2
-        )
-      );
-    } catch (err) {
-      // Report persistence must never mask the run result.
-      reportFile = null;
-    }
-
-    onProgress({ type: 'done', summary, reportFile });
-    return { summary, results, reportFile };
+    const reportOk = writeReport('complete');
+    const done = { type: 'done', summary, reportFile: reportOk ? reportFile : null };
+    onProgress(done);
+    return { summary, results, reportFile: done.reportFile };
   }
 
   return {

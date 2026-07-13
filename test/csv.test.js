@@ -38,3 +38,17 @@ test('newline inside quoted field', () => {
     ['line1\nline2', 'x'],
   ]);
 });
+
+test('TSV (cells pasted from Google Sheets/Excel) is auto-detected', () => {
+  assert.deepEqual(parseCsv('firstName\tphone\nAda\t415-555-0134'), [
+    ['firstName', 'phone'],
+    ['Ada', '415-555-0134'],
+  ]);
+});
+
+test('TSV values containing commas stay in one field', () => {
+  assert.deepEqual(parseCsv('name\tnote\nAda\tHi, there'), [
+    ['name', 'note'],
+    ['Ada', 'Hi, there'],
+  ]);
+});
