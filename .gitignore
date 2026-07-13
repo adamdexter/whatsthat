@@ -1,0 +1,20 @@
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+.Spotlight-V100
+.Trashes
+
+# Node
+node_modules/
+npm-debug.log*
+
+# WhatsApp session data (auth credentials — never commit)
+.wwebjs_auth/
+.wwebjs_cache/
+
+# Local run artifacts
+reports/
+*.local.json
+.env
