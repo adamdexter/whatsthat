@@ -8,12 +8,16 @@ const S = {
   headers: [],
   contacts: [],
   selected: new Set(),
+  filters: {}, // header -> Set of selected values (lowercased; '__blank__' for empty cells)
+  savedFilters: {}, // from the persisted draft, applied when contacts load
   previews: new Map(), // contact id -> { text, unknown, empty }
   previewId: null,
   running: false,
   progressCount: 0,
   totalToSend: 0,
 };
+
+const BLANK = '__blank__';
 
 const $ = (id) => document.getElementById(id);
 const esc = (s) =>
@@ -153,8 +157,16 @@ function renderGoogle() {
 function setContacts(data) {
   S.headers = data.headers || [];
   S.contacts = data.contacts || [];
-  S.selected = new Set(S.contacts.filter((c) => c.phone).map((c) => c.id));
-  S.previewId = S.contacts.find((c) => c.phone)?.id ?? null;
+  // Restore saved send rules for columns that exist in this sheet, then let
+  // them shape the initial selection.
+  S.filters = {};
+  for (const [h, values] of Object.entries(S.savedFilters || {})) {
+    if (S.headers.some((x) => x.trim().toLowerCase() === h.trim().toLowerCase()) && Array.isArray(values) && values.length) {
+      S.filters[h] = new Set(values);
+    }
+  }
+  applyFiltersToSelection();
+  S.previewId = S.contacts.find((c) => S.selected.has(c.id))?.id ?? S.contacts.find((c) => c.phone)?.id ?? null;
   const errEl = $('contacts-error');
   if (data.error) {
     errEl.textContent = data.error;
@@ -162,9 +174,102 @@ function setContacts(data) {
   } else {
     errEl.classList.add('hidden');
   }
+  renderFilters();
   renderContacts();
   renderChips();
   refreshPreviews();
+}
+
+// ---------- Send rules (filters on categorical columns like rank/Status) ----------
+
+// Columns with a small set of repeating values (e.g. rank, Status) are
+// offered as send rules. Mostly-unique columns (names, emails) are not.
+function categoricalColumns() {
+  if (S.contacts.length < 2) return [];
+  const cols = [];
+  for (const h of S.headers) {
+    if (h.toLowerCase() === 'phone') continue;
+    const seen = new Map(); // lowercased -> display casing
+    let blanks = 0;
+    for (const c of S.contacts) {
+      const v = String(c.fields[h] ?? '').trim();
+      if (v === '') blanks++;
+      else if (!seen.has(v.toLowerCase())) seen.set(v.toLowerCase(), v);
+    }
+    if (seen.size >= 1 && seen.size <= 8 && seen.size < S.contacts.length) {
+      cols.push({ header: h, values: [...seen.values()].sort(), hasBlank: blanks > 0 });
+    }
+  }
+  return cols;
+}
+
+function contactMatchesFilters(c) {
+  for (const [h, sel] of Object.entries(S.filters)) {
+    if (!sel || sel.size === 0) continue;
+    const v = String(c.fields[h] ?? '').trim();
+    if (!sel.has(v === '' ? BLANK : v.toLowerCase())) return false;
+  }
+  return true;
+}
+
+function applyFiltersToSelection() {
+  S.selected = new Set(S.contacts.filter((c) => c.phone && contactMatchesFilters(c)).map((c) => c.id));
+}
+
+function renderFilters() {
+  const el = $('contact-filters');
+  const cols = categoricalColumns();
+  if (!cols.length) {
+    el.innerHTML = '';
+    return;
+  }
+  const anyActive = Object.values(S.filters).some((s) => s && s.size);
+  el.innerHTML = `
+    <div class="filters-box">
+      <span class="filters-title">Send rules</span>
+      ${anyActive ? '<a href="#" class="filters-clear" id="filters-clear">clear all</a>' : ''}
+      ${cols
+        .map((col) => {
+          const sel = S.filters[col.header] || new Set();
+          const chip = (value, key) =>
+            `<button type="button" class="filter-chip ${sel.has(key) ? 'active' : ''}" data-col="${esc(col.header)}" data-key="${esc(key)}">${esc(value)}</button>`;
+          return `<div class="filter-group">
+            <span class="filter-name">${esc(col.header)}</span>
+            ${col.values.map((v) => chip(v, v.toLowerCase())).join('')}
+            ${col.hasBlank ? chip('(blank)', BLANK) : ''}
+          </div>`;
+        })
+        .join('')}
+      <div class="filters-hint">Toggling a rule reselects matching contacts (with valid phones). No rules on a row = that column is ignored. You can still check/uncheck individual people below.</div>
+    </div>`;
+
+  el.querySelectorAll('.filter-chip').forEach((chip) => {
+    chip.onclick = () => {
+      const col = chip.dataset.col;
+      const key = chip.dataset.key;
+      const sel = S.filters[col] || (S.filters[col] = new Set());
+      if (sel.has(key)) sel.delete(key);
+      else sel.add(key);
+      if (sel.size === 0) delete S.filters[col];
+      applyFiltersToSelection();
+      renderFilters();
+      renderContacts();
+      renderPreviewWarnings();
+      saveDraft();
+    };
+  });
+  const clear = $('filters-clear');
+  if (clear) {
+    clear.onclick = (e) => {
+      e.preventDefault();
+      S.filters = {};
+      applyFiltersToSelection();
+      renderFilters();
+      renderContacts();
+      renderPreviewWarnings();
+      saveDraft();
+    };
+  }
 }
 
 function renderContacts() {
@@ -495,6 +600,11 @@ function onRunDone(e) {
 
 // ---------- Draft persistence ----------
 const saveDraft = debounce(() => {
+  const filters = {};
+  for (const [h, sel] of Object.entries(S.filters)) {
+    if (sel && sel.size) filters[h] = [...sel];
+  }
+  S.savedFilters = filters;
   api('/api/draft', {
     method: 'POST',
     body: {
@@ -503,6 +613,7 @@ const saveDraft = debounce(() => {
       tabName: $('tab-name').value,
       delayMinMs: getDelaysMs().delayMinMs,
       delayMaxMs: getDelaysMs().delayMaxMs,
+      filters,
     },
   }).catch(() => {});
 }, 600);
@@ -527,6 +638,7 @@ async function boot() {
   if (d.tabName) $('tab-name').value = d.tabName;
   if (d.delayMinMs) $('delay-min').value = Math.round(d.delayMinMs / 1000);
   if (d.delayMaxMs) $('delay-max').value = Math.round(d.delayMaxMs / 1000);
+  if (d.filters && typeof d.filters === 'object') S.savedFilters = d.filters;
 
   renderPills();
   renderWa();

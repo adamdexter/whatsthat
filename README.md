@@ -31,18 +31,30 @@ Then follow the numbered steps in the UI:
 Row 1 is the header row and must include a `phone` column. Every other column
 becomes a template variable, matched case-insensitively:
 
-| firstName | lastName | nickname | phone        | favoriteTeam |
-|-----------|----------|----------|--------------|--------------|
-| Ada       | Lovelace | Ada      | 415-555-0134 | Analytical FC|
+| firstName | lastName | nickname | phone        | rank | Status |
+|-----------|----------|----------|--------------|------|--------|
+| Ada       | Lovelace | Ada      | 415-555-0134 | FC   | Active |
 
 Template:
 
 ```
-Hey {{nickname}}! It's Adam — go {{favoriteTeam}}! 🎉
+Hey {{nickname}}! It's Adam — see you Friday! 🎉
 ```
 
 Phone numbers: bare 10-digit numbers are treated as US (`+1`). International
 numbers must include their country code with a leading `+`.
+
+`scripts/create-sheet.js` creates a ready-made "WhatsThat Contacts" sheet
+(populated, formatted, with rank/Status dropdowns) — it asks for Sheets write
+access with a separate one-time consent; the app itself stays read-only.
+
+## Send rules
+
+Columns with a small set of repeating values (like `rank` or `Status`) show up
+as **Send rules** above the contacts table. Toggle values to select exactly
+who matches — e.g. rank `EA` + `FC`, Status `Active`. A column with no toggled
+values is ignored. Rules are remembered between sessions; you can still
+check/uncheck individual people after applying them.
 
 ## Safety rails
 
