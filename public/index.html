@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>WhatsThat</title>
+  <link rel="stylesheet" href="style.css" />
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>💬</text></svg>" />
+</head>
+<body>
+  <header>
+    <div class="header-inner">
+      <h1>💬 WhatsThat</h1>
+      <div class="pills">
+        <span id="pill-wa" class="pill">WhatsApp: …</span>
+        <span id="pill-google" class="pill">Google: …</span>
+        <span id="pill-mock" class="pill pill-mock hidden">MOCK MODE</span>
+      </div>
+    </div>
+  </header>
+
+  <main>
+    <!-- 1. WhatsApp -->
+    <section class="card" id="card-wa">
+      <h2><span class="step">1</span> WhatsApp connection</h2>
+      <div id="wa-body">Starting…</div>
+    </section>
+
+    <!-- 2. Google -->
+    <section class="card" id="card-google">
+      <h2><span class="step">2</span> Google Sheets connection</h2>
+      <div id="google-body"></div>
+      <details id="google-help">
+        <summary>How to get Google OAuth credentials (one-time, ~10 min)</summary>
+        <ol>
+          <li>Go to <a href="https://console.cloud.google.com/" target="_blank" rel="noopener">console.cloud.google.com</a> and create a project (e.g. "whatsthat").</li>
+          <li>In <b>APIs &amp; Services → Library</b>, search for <b>Google Sheets API</b> and click <b>Enable</b>.</li>
+          <li>In <b>APIs &amp; Services → OAuth consent screen</b>: choose <b>Internal</b> if you have Google Workspace (recommended — no verification needed, tokens never expire). If it's a personal Gmail, choose External, then add your own email as a Test user.</li>
+          <li>In <b>APIs &amp; Services → Credentials</b>, click <b>Create credentials → OAuth client ID</b>, application type <b>Desktop app</b>.</li>
+          <li>Copy the <b>Client ID</b> and <b>Client secret</b> into the fields above.</li>
+        </ol>
+        <p class="muted">Note: with an External consent screen left in "Testing" mode, Google expires the connection every 7 days — you'll just need to click Connect again. Internal (Workspace) connections don't expire.</p>
+      </details>
+    </section>
+
+    <!-- 3. Contacts -->
+    <section class="card" id="card-contacts">
+      <h2><span class="step">3</span> Contacts</h2>
+      <div class="row">
+        <input type="text" id="sheet-url" placeholder="Paste your Google Sheet URL" />
+        <input type="text" id="tab-name" placeholder="Tab name (optional)" size="14" />
+        <button id="btn-load-sheet" class="primary">Load from Sheet</button>
+      </div>
+      <p class="muted">Row 1 must be headers and include a <code>phone</code> column. Every other column becomes a <code>{{variable}}</code>.</p>
+      <details>
+        <summary>…or paste CSV instead</summary>
+        <textarea id="csv-text" rows="5" placeholder="firstName,lastName,nickname,phone&#10;Ada,Lovelace,Ada,415-555-0134"></textarea>
+        <button id="btn-load-csv">Load CSV</button>
+      </details>
+      <div id="contacts-error" class="error hidden"></div>
+      <div id="contacts-table-wrap"></div>
+    </section>
+
+    <!-- 4. Message -->
+    <section class="card" id="card-message">
+      <h2><span class="step">4</span> Message</h2>
+      <div id="var-chips" class="chips"></div>
+      <textarea id="template" rows="6" placeholder="Hey {{firstName}}! …"></textarea>
+      <div class="preview-wrap">
+        <div class="preview-head">
+          <label for="preview-select">Preview for:</label>
+          <select id="preview-select"></select>
+        </div>
+        <div id="preview-bubble" class="bubble muted">Write a message and load contacts to see a preview.</div>
+        <div id="preview-warnings"></div>
+      </div>
+    </section>
+
+    <!-- 5. Send -->
+    <section class="card" id="card-send">
+      <h2><span class="step">5</span> Send</h2>
+      <div class="row">
+        <button id="btn-test">Send test to me</button>
+        <span id="test-status" class="muted"></span>
+      </div>
+      <div class="row delays">
+        <label>Delay between sends:</label>
+        <input type="number" id="delay-min" min="1" value="4" size="4" /> to
+        <input type="number" id="delay-max" min="1" value="10" size="4" /> seconds
+      </div>
+      <div class="row">
+        <button id="btn-run" class="primary big" disabled>Send to 0 people</button>
+      </div>
+      <div id="run-confirm" class="confirm hidden"></div>
+      <div id="run-progress" class="hidden">
+        <div class="progress-track"><div id="progress-bar" class="progress-bar"></div></div>
+        <div class="row">
+          <span id="progress-label"></span>
+          <button id="btn-cancel" class="danger">Cancel run</button>
+        </div>
+        <div id="progress-list"></div>
+      </div>
+      <div id="run-report" class="hidden"></div>
+    </section>
+  </main>
+
+  <script src="app.js"></script>
+</body>
+</html>
