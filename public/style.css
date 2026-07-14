@@ -36,6 +36,7 @@ header {
   gap: 8px;
 }
 h1 { font-size: 20px; margin: 0; }
+.version { font-size: 12px; font-weight: 400; opacity: 0.75; margin-left: 4px; }
 
 .pills { display: flex; gap: 8px; flex-wrap: wrap; }
 .pill {

@@ -756,6 +756,7 @@ async function boot() {
   S.wa = state.wa;
   S.google = state.google;
   S.running = state.running;
+  if (state.version) $('app-version').textContent = `v${state.version}`;
 
   const d = state.draft || {};
   if (d.template) $('template').value = d.template;

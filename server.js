@@ -13,6 +13,7 @@ const { render } = require('./src/template');
 const { createRunner } = require('./src/runner');
 const { createWhatsApp } = require('./src/whatsapp');
 
+const VERSION = require('./package.json').version;
 const PORT = Number(process.env.PORT || 3847);
 const MOCK = process.env.WHATSTHAT_MOCK === '1';
 const NO_OPEN = process.env.WHATSTHAT_NO_OPEN === '1';
@@ -74,6 +75,7 @@ let lastRun = null; // most recent run_done event, for UI recovery after an SSE 
 
 app.get('/api/state', (req, res) => {
   res.json({
+    version: VERSION,
     mock: MOCK,
     wa: wa.getState(),
     google: sheetsApi.status(),
@@ -234,7 +236,7 @@ if (MOCK) {
 // ---------- Boot ----------
 app.listen(PORT, '127.0.0.1', () => {
   const url = `http://localhost:${PORT}`;
-  console.log(`WhatsThat ${MOCK ? '(MOCK MODE) ' : ''}running at ${url}`);
+  console.log(`WhatsThat v${VERSION} ${MOCK ? '(MOCK MODE) ' : ''}running at ${url}`);
   if (process.platform === 'darwin' && !NO_OPEN) execFile('open', [url]);
 });
 
