@@ -229,6 +229,31 @@ td.phone-bad { color: var(--red); }
 }
 .chip:hover { background: #d4edda; }
 
+/* Variable autocomplete */
+.ta-wrap { position: relative; }
+.autocomplete {
+  position: absolute;
+  z-index: 10;
+  background: #fff;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.12);
+  min-width: 170px;
+  max-height: 190px;
+  overflow-y: auto;
+  font-family: ui-monospace, Menlo, monospace;
+  font-size: 13px;
+}
+.ac-item { padding: 6px 12px; cursor: pointer; white-space: nowrap; }
+.ac-item.active, .ac-item:hover { background: #e8f5ee; color: var(--green-dark); }
+.ac-hint {
+  padding: 4px 12px;
+  color: var(--muted);
+  font-size: 11px;
+  border-top: 1px solid var(--border);
+  font-family: -apple-system, BlinkMacSystemFont, sans-serif;
+}
+
 /* Preview bubble */
 .preview-wrap { margin-top: 14px; }
 .preview-head { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; font-size: 14px; }

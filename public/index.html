@@ -66,7 +66,10 @@
     <section class="card" id="card-message">
       <h2><span class="step">4</span> Message</h2>
       <div id="var-chips" class="chips"></div>
-      <textarea id="template" rows="6" placeholder="Hey {{firstName}}! …"></textarea>
+      <div class="ta-wrap">
+        <textarea id="template" rows="6" placeholder="Hey {{firstName}}! …"></textarea>
+        <div id="template-ac" class="autocomplete hidden"></div>
+      </div>
       <div class="preview-wrap">
         <div class="preview-head">
           <label for="preview-select">Preview for:</label>

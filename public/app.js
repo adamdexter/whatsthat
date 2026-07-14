@@ -365,6 +365,131 @@ function renderChips() {
   });
 }
 
+// ---------- Variable autocomplete in the template box ----------
+// Typing "{" (or "{{") pops a suggestion list of the sheet's columns,
+// filtered as you type. Arrows navigate, Enter/Tab/click inserts, Esc closes.
+const AC = { open: false, items: [], index: 0, matchStart: 0 };
+
+function acDetect() {
+  const ta = $('template');
+  if (ta.selectionStart !== ta.selectionEnd) return null;
+  const upto = ta.value.slice(0, ta.selectionStart);
+  const m = upto.match(/\{\{?([A-Za-z0-9 _.-]*)$/);
+  if (!m) return null;
+  const prefix = m[1].toLowerCase();
+  const items = S.headers
+    .filter((h) => h.toLowerCase() !== 'phone')
+    .filter((h) => h.toLowerCase().startsWith(prefix));
+  if (!items.length) return null;
+  return { matchStart: ta.selectionStart - m[0].length, items };
+}
+
+// Pixel position of the caret inside the textarea, via a hidden mirror div.
+function caretXY(ta) {
+  const style = getComputedStyle(ta);
+  const div = document.createElement('div');
+  for (const p of [
+    'fontFamily', 'fontSize', 'fontWeight', 'lineHeight', 'letterSpacing',
+    'paddingTop', 'paddingRight', 'paddingBottom', 'paddingLeft',
+    'borderTopWidth', 'borderRightWidth', 'borderBottomWidth', 'borderLeftWidth', 'boxSizing',
+  ]) {
+    div.style[p] = style[p];
+  }
+  div.style.position = 'absolute';
+  div.style.visibility = 'hidden';
+  div.style.whiteSpace = 'pre-wrap';
+  div.style.wordWrap = 'break-word';
+  div.style.width = `${ta.clientWidth}px`;
+  div.textContent = ta.value.slice(0, ta.selectionStart);
+  const marker = document.createElement('span');
+  marker.textContent = '​';
+  div.appendChild(marker);
+  ta.parentNode.appendChild(div);
+  const lineHeight = parseFloat(style.lineHeight) || parseFloat(style.fontSize) * 1.45 || 20;
+  const xy = { top: marker.offsetTop - ta.scrollTop + lineHeight + 4, left: marker.offsetLeft };
+  div.remove();
+  return xy;
+}
+
+function acRender() {
+  const dd = $('template-ac');
+  if (!AC.open) {
+    dd.classList.add('hidden');
+    return;
+  }
+  dd.innerHTML =
+    AC.items
+      .map(
+        (v, i) => `<div class="ac-item ${i === AC.index ? 'active' : ''}" data-i="${i}">{{${esc(v)}}}</div>`
+      )
+      .join('') + '<div class="ac-hint">↑↓ navigate · Enter inserts · Esc closes</div>';
+  // mousedown (not click) so the textarea doesn't blur first
+  dd.querySelectorAll('.ac-item').forEach((el) => {
+    el.onmousedown = (e) => {
+      e.preventDefault();
+      acInsert(Number(el.dataset.i));
+    };
+  });
+  const ta = $('template');
+  const { top, left } = caretXY(ta);
+  dd.style.top = `${Math.max(0, Math.min(top, ta.offsetHeight - 8))}px`;
+  dd.style.left = `${Math.max(0, Math.min(left, ta.clientWidth - 180))}px`;
+  dd.classList.remove('hidden');
+  const active = dd.querySelector('.ac-item.active');
+  if (active) active.scrollIntoView({ block: 'nearest' });
+}
+
+function acUpdate() {
+  const found = acDetect();
+  if (found) {
+    const sameItems = AC.open && JSON.stringify(found.items) === JSON.stringify(AC.items);
+    AC.items = found.items;
+    AC.matchStart = found.matchStart;
+    if (!sameItems) AC.index = 0;
+    AC.open = true;
+  } else {
+    AC.open = false;
+  }
+  acRender();
+}
+
+function acClose() {
+  AC.open = false;
+  acRender();
+}
+
+function acInsert(i) {
+  const ta = $('template');
+  const v = AC.items[i];
+  const insert = `{{${v}}}`;
+  const after = ta.value.slice(ta.selectionStart);
+  ta.value = ta.value.slice(0, AC.matchStart) + insert + after;
+  const pos = AC.matchStart + insert.length;
+  ta.focus();
+  ta.selectionStart = ta.selectionEnd = pos;
+  acClose();
+  onTemplateChanged();
+}
+
+function acKeydown(e) {
+  if (!AC.open) return;
+  if (e.key === 'ArrowDown') {
+    e.preventDefault();
+    AC.index = (AC.index + 1) % AC.items.length;
+    acRender();
+  } else if (e.key === 'ArrowUp') {
+    e.preventDefault();
+    AC.index = (AC.index - 1 + AC.items.length) % AC.items.length;
+    acRender();
+  } else if (e.key === 'Enter' || e.key === 'Tab') {
+    e.preventDefault();
+    acInsert(AC.index);
+  } else if (e.key === 'Escape') {
+    e.preventDefault();
+    acClose();
+  }
+}
+
 function renderPreviewSelect() {
   const sel = $('preview-select');
   const options = S.contacts
@@ -694,6 +819,13 @@ async function boot() {
 
   // Wire inputs
   $('template').addEventListener('input', onTemplateChanged);
+  $('template').addEventListener('input', acUpdate);
+  $('template').addEventListener('keydown', acKeydown);
+  $('template').addEventListener('click', acUpdate);
+  $('template').addEventListener('keyup', (e) => {
+    if (['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(e.key)) acUpdate();
+  });
+  $('template').addEventListener('blur', () => setTimeout(acClose, 100));
   $('sheet-url').addEventListener('input', saveDraft);
   $('tab-name').addEventListener('input', saveDraft);
   $('delay-min').addEventListener('change', saveDraft);
