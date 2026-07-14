@@ -15,6 +15,7 @@ const S = {
   running: false,
   progressCount: 0,
   totalToSend: 0,
+  schedule: [],
 };
 
 const BLANK = '__blank__';
@@ -610,6 +611,7 @@ function renderRunButton() {
   btn.textContent = S.running ? 'Sending…' : `Send to ${n} ${n === 1 ? 'person' : 'people'}`;
   btn.disabled =
     S.running || S.wa.status !== 'ready' || n === 0 || !$('template').value.trim() || selectedHasBlockingProblems();
+  $('btn-schedule').disabled = btn.disabled;
   $('btn-test').disabled = S.wa.status !== 'ready' || !$('template').value.trim() || S.previewId == null;
 }
 
@@ -635,6 +637,7 @@ async function testSend() {
 }
 
 function showRunConfirm() {
+  $('schedule-form').classList.add('hidden');
   const n = S.selected.size;
   const { delayMinMs, delayMaxMs } = getDelaysMs();
   const etaSec = Math.round((n * (delayMinMs + delayMaxMs)) / 2 / 1000);
@@ -685,6 +688,115 @@ function showRunError(message) {
   const el = $('run-report');
   el.innerHTML = `<div class="error">Run failed: ${esc(message)}</div>`;
   el.classList.remove('hidden');
+}
+
+// ---------- Scheduled sends ----------
+function toLocalInputValue(date) {
+  const p = (n) => String(n).padStart(2, '0');
+  return `${date.getFullYear()}-${p(date.getMonth() + 1)}-${p(date.getDate())}T${p(date.getHours())}:${p(date.getMinutes())}`;
+}
+
+function relTime(ms) {
+  const m = Math.round(ms / 60000);
+  if (m < 1) return 'less than a minute';
+  if (m < 60) return `${m}m`;
+  const h = Math.floor(m / 60);
+  if (h < 48) return `${h}h ${m % 60}m`;
+  return `${Math.round(h / 24)}d`;
+}
+
+function showScheduleForm() {
+  $('run-confirm').classList.add('hidden');
+  const n = S.selected.size;
+  const from = S.wa.self?.number || 'your number';
+  const def = new Date(Date.now() + 3600000);
+  def.setMinutes(0, 0, 0);
+  const el = $('schedule-form');
+  el.innerHTML = `
+    <b>Schedule this send</b>
+    <p><b>${n}</b> ${n === 1 ? 'person' : 'people'} from <b>${esc(from)}</b>. The recipients and message are
+    snapshotted now — later sheet edits won't change this send.</p>
+    <div class="row">
+      <input type="datetime-local" id="sched-at" value="${toLocalInputValue(def)}" min="${toLocalInputValue(new Date())}" />
+      <button id="btn-sched-confirm" class="primary">Schedule</button>
+      <button id="btn-sched-abort">Cancel</button>
+    </div>
+    <div id="sched-result"></div>`;
+  el.classList.remove('hidden');
+  $('btn-sched-abort').onclick = () => el.classList.add('hidden');
+  $('btn-sched-confirm').onclick = async () => {
+    const when = new Date($('sched-at').value);
+    const resEl = $('sched-result');
+    // datetime-local truncates seconds, so "this minute" parses up to 59s in
+    // the past — allow the same 60s grace as the server ("send now-ish").
+    if (!(when.getTime() > Date.now() - 60000)) {
+      resEl.innerHTML = '<div class="error">Pick a time in the future.</div>';
+      return;
+    }
+    try {
+      const { agent } = await api('/api/schedule', {
+        method: 'POST',
+        body: {
+          sendAt: when.toISOString(),
+          contacts: S.contacts.filter((c) => S.selected.has(c.id)),
+          template: $('template').value,
+          delayMinMs: getDelaysMs().delayMinMs,
+          delayMaxMs: getDelaysMs().delayMaxMs,
+        },
+      });
+      el.classList.add('hidden');
+      if (!agent.installed) {
+        showRunError(`${agent.error || 'Background agent not installed'} — this send will only fire while the app is open.`);
+      }
+    } catch (err) {
+      resEl.innerHTML = `<div class="error">${esc(err.message)}</div>`;
+    }
+  };
+}
+
+function renderSchedule() {
+  const el = $('schedule-list');
+  if (!S.schedule.length) {
+    el.innerHTML = '';
+    return;
+  }
+  const rank = (c) => (c.status === 'pending' || c.status === 'running' ? 0 : 1);
+  const items = [...S.schedule].sort(
+    (a, b) => rank(a) - rank(b) || (rank(a) === 0 ? Date.parse(a.sendAt) - Date.parse(b.sendAt) : Date.parse(b.sendAt) - Date.parse(a.sendAt))
+  );
+  const fmt = (iso) =>
+    new Date(iso).toLocaleString([], { weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
+
+  el.innerHTML =
+    '<div class="sched-title">Scheduled sends</div>' +
+    items
+      .slice(0, 10)
+      .map((c) => {
+        const n = c.contacts.length;
+        let detail = '';
+        if (c.status === 'pending') {
+          const ms = Date.parse(c.sendAt) - Date.now();
+          detail = `${ms > 0 ? `in ${relTime(ms)}` : 'due now'} <button class="sched-cancel" data-id="${esc(c.id)}">Cancel</button>`;
+        } else if (c.status === 'running') {
+          detail = 'sending now…';
+        } else if (c.status === 'done' && c.summary) {
+          detail = `<span class="st-sent">${c.summary.sent} sent</span>${c.summary.failed ? ` <span class="st-failed">${c.summary.failed} failed</span>` : ''}`;
+        } else if (c.error) {
+          detail = `<span class="sched-err">${esc(c.error)}</span>`;
+        }
+        return `<div class="sched-item">
+          <span class="sched-when">📅 ${esc(fmt(c.sendAt))}</span>
+          <span>${n} ${n === 1 ? 'person' : 'people'}</span>
+          <span class="sched-status ${esc(c.status)}">${esc(c.status)}</span>
+          <span class="muted">“${esc(c.template.slice(0, 48))}${c.template.length > 48 ? '…' : ''}”</span>
+          ${detail}
+        </div>`;
+      })
+      .join('');
+
+  el.querySelectorAll('.sched-cancel').forEach((btn) => {
+    btn.onclick = () => api('/api/schedule/cancel', { method: 'POST', body: { id: btn.dataset.id } }).catch(() => {});
+  });
 }
 
 function onRunProgress(e) {
@@ -756,6 +868,7 @@ async function boot() {
   S.wa = state.wa;
   S.google = state.google;
   S.running = state.running;
+  S.schedule = state.schedule || [];
   if (state.version) $('app-version').textContent = `v${state.version}`;
 
   const d = state.draft || {};
@@ -794,6 +907,10 @@ async function boot() {
   });
   es.addEventListener('run_progress', (e) => onRunProgress(JSON.parse(e.data)));
   es.addEventListener('run_done', (e) => onRunDone(JSON.parse(e.data)));
+  es.addEventListener('schedule', (e) => {
+    S.schedule = JSON.parse(e.data).schedule;
+    renderSchedule();
+  });
   es.addEventListener('run_error', (e) => {
     S.running = false;
     showRunError(JSON.parse(e.data).error);
@@ -854,7 +971,14 @@ async function boot() {
   };
   $('btn-test').onclick = testSend;
   $('btn-run').onclick = showRunConfirm;
+  $('btn-schedule').onclick = showScheduleForm;
   $('btn-cancel').onclick = () => api('/api/run/cancel', { method: 'POST' }).catch(() => {});
+
+  renderSchedule();
+  // Keep pending countdowns fresh.
+  setInterval(() => {
+    if (S.schedule.some((c) => c.status === 'pending')) renderSchedule();
+  }, 30000);
 }
 
 boot();

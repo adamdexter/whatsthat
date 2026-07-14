@@ -88,6 +88,10 @@ function createRealWhatsApp() {
       state.self = null;
       emit();
     },
+    // Close the browser cleanly (used by the headless scheduled-send runner).
+    async destroy() {
+      await client.destroy();
+    },
   };
 }
 
@@ -137,6 +141,7 @@ function createMockWhatsApp() {
       state.self = null;
       emit();
     },
+    async destroy() {},
   };
 }
 

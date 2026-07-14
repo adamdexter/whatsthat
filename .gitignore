@@ -17,4 +17,5 @@ npm-debug.log*
 # Local run artifacts
 reports/
 *.local.json
+*.log
 .env

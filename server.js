@@ -12,6 +12,7 @@ const { parseCsv } = require('./src/csv');
 const { render } = require('./src/template');
 const { createRunner } = require('./src/runner');
 const { createWhatsApp } = require('./src/whatsapp');
+const { createScheduleStore, isAgentInstalled, installAgent } = require('./src/schedule');
 
 const VERSION = require('./package.json').version;
 const PORT = Number(process.env.PORT || 3847);
@@ -21,8 +22,11 @@ const ROOT = __dirname;
 const DATA_DIR = process.env.WHATSTHAT_DATA_DIR || ROOT; // overridable for tests
 const REPORTS_DIR = path.join(DATA_DIR, 'reports');
 
+const NO_AGENT = process.env.WHATSTHAT_NO_AGENT === '1' || MOCK; // tests/mock skip launchctl
+
 const googleStore = new JsonStore(path.join(DATA_DIR, 'google.local.json'));
 const draftStore = new JsonStore(path.join(DATA_DIR, 'draft.local.json'));
+const scheduleStore = createScheduleStore(path.join(DATA_DIR, 'schedule.local.json'));
 
 const sheetsApi = createSheets({
   store: googleStore,
@@ -82,6 +86,8 @@ app.get('/api/state', (req, res) => {
     draft: draftStore.read(),
     running: runner.isRunning(),
     lastRun,
+    schedule: scheduleStore.list(),
+    agentInstalled: NO_AGENT ? true : isAgentInstalled(),
   });
 });
 
@@ -205,6 +211,89 @@ app.post('/api/run/cancel', (req, res) => {
   runner.cancel();
   res.json({ cancelling: true });
 });
+
+// ---------- Scheduled sends ----------
+const broadcastSchedule = () => broadcast('schedule', { schedule: scheduleStore.list() });
+
+app.post('/api/schedule', (req, res) => {
+  const { sendAt, contacts, template, delayMinMs, delayMaxMs } = req.body || {};
+  const at = Date.parse(sendAt);
+  if (!at || Number.isNaN(at)) return res.status(400).json({ error: 'Invalid send time' });
+  if (at < Date.now() - 60000) return res.status(400).json({ error: 'Send time is in the past' });
+  if (!Array.isArray(contacts) || contacts.length === 0) return res.status(400).json({ error: 'No contacts selected' });
+  if (!template || !String(template).trim()) return res.status(400).json({ error: 'The message template is empty' });
+
+  const campaign = scheduleStore.add({
+    sendAt: new Date(at).toISOString(),
+    contacts,
+    template,
+    delayMinMs: Number(delayMinMs) || 4000,
+    delayMaxMs: Number(delayMaxMs) || 10000,
+  });
+
+  // Make sure the background agent exists so this fires with the app closed.
+  let agent = { installed: true };
+  if (!NO_AGENT) {
+    try {
+      agent = isAgentInstalled() ? { installed: true } : installAgent({ rootDir: ROOT });
+    } catch (err) {
+      agent = { installed: false, error: `Background agent install failed: ${err.message}` };
+    }
+  }
+
+  broadcastSchedule();
+  res.json({ campaign, agent });
+});
+
+app.post('/api/schedule/cancel', (req, res) => {
+  const c = scheduleStore.cancel((req.body || {}).id);
+  if (!c) return res.status(404).json({ error: 'Campaign not found or not pending' });
+  broadcastSchedule();
+  res.json({ campaign: c });
+});
+
+// Runs any due campaigns through the app's own WhatsApp session. Called by
+// the in-app timer and by the launchd runner when the app is open.
+async function executeDue() {
+  if (runner.isRunning()) return { ran: false, reason: 'a run is already in progress' };
+  if (wa.getState().status !== 'ready') return { ran: false, reason: 'whatsapp not ready' };
+  const due = scheduleStore.findDue();
+  if (!due.length) return { ran: false, reason: 'nothing due' };
+
+  for (const campaign of due) {
+    scheduleStore.patch(campaign.id, { status: 'running', startedAt: new Date().toISOString() });
+    broadcastSchedule();
+    try {
+      const { summary, reportFile } = await runner.start({
+        contacts: campaign.contacts,
+        template: campaign.template,
+        delayMinMs: campaign.delayMinMs,
+        delayMaxMs: campaign.delayMaxMs,
+        onProgress: (event) => {
+          if (event.type === 'progress') {
+            const { contact, ...rest } = event;
+            broadcast('run_progress', { ...rest, phone: contact.phone });
+          } else if (event.type === 'done') {
+            lastRun = event;
+            broadcast('run_done', event);
+          }
+        },
+      });
+      scheduleStore.patch(campaign.id, { status: 'done', finishedAt: new Date().toISOString(), summary, reportFile });
+    } catch (err) {
+      scheduleStore.patch(campaign.id, { status: 'failed', error: err.message });
+    }
+    broadcastSchedule();
+  }
+  return { ran: true, count: due.length };
+}
+
+app.post('/api/schedule/run-due', async (req, res) => {
+  res.json(await executeDue());
+});
+
+const TICK_MS = Number(process.env.WHATSTHAT_TICK_MS) || 30000;
+setInterval(() => executeDue().catch(() => {}), TICK_MS);
 
 // ---------- Reports ----------
 app.get('/api/reports', (req, res) => {

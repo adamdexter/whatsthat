@@ -36,7 +36,14 @@ async function waitFor(fn, timeoutMs = 15000, everyMs = 150) {
 
 before(async () => {
   server = spawn(process.execPath, [path.join(__dirname, '..', 'server.js')], {
-    env: { ...process.env, WHATSTHAT_MOCK: '1', PORT: String(PORT), WHATSTHAT_NO_OPEN: '1', WHATSTHAT_DATA_DIR: DATA_DIR },
+    env: {
+      ...process.env,
+      WHATSTHAT_MOCK: '1',
+      PORT: String(PORT),
+      WHATSTHAT_NO_OPEN: '1',
+      WHATSTHAT_DATA_DIR: DATA_DIR,
+      WHATSTHAT_TICK_MS: '200', // fast in-app scheduler tick for the schedule test
+    },
     stdio: 'ignore',
   });
   await waitFor(async () => {
@@ -183,4 +190,53 @@ test('OAuth callback escapes error text (no reflected XSS)', async () => {
   const body = await res.text();
   assert.ok(!body.includes('<script>alert(1)</script>'), 'script tag must be escaped');
   assert.ok(body.includes('&lt;script&gt;'), 'escaped form present');
+});
+
+test('scheduled send: validates, fires via the in-app tick, reports done', async () => {
+  // Validation
+  const past = await api('/api/schedule', {
+    method: 'POST',
+    body: { sendAt: new Date(Date.now() - 3600000).toISOString(), contacts: [contacts[0]], template: 'x' },
+  });
+  assert.equal(past.status, 400);
+
+  // Schedule 1s out; the 200ms tick should pick it up.
+  const { status, data } = await api('/api/schedule', {
+    method: 'POST',
+    body: {
+      sendAt: new Date(Date.now() + 1000).toISOString(),
+      contacts: [contacts[0]], // Ada
+      template: 'Scheduled hello, {{firstName}}!',
+      delayMinMs: 1,
+      delayMaxMs: 2,
+    },
+  });
+  assert.equal(status, 200, JSON.stringify(data));
+  assert.equal(data.campaign.status, 'pending');
+  assert.equal(data.agent.installed, true); // mock mode: agent short-circuited
+
+  const done = await waitFor(async () => {
+    const { data: st } = await api('/api/state');
+    const c = st.schedule.find((x) => x.id === data.campaign.id);
+    return c && c.status === 'done' ? c : null;
+  });
+  assert.equal(done.summary.sent, 1);
+  assert.ok(done.reportFile);
+
+  const sent = (await api('/api/mock/sent')).data.sent;
+  assert.ok(sent.some((s) => s.text === 'Scheduled hello, Ada!'));
+});
+
+test('scheduled send can be cancelled while pending', async () => {
+  const { data } = await api('/api/schedule', {
+    method: 'POST',
+    body: {
+      sendAt: new Date(Date.now() + 3600000).toISOString(),
+      contacts: [contacts[0]],
+      template: 'never sends',
+    },
+  });
+  const res = await api('/api/schedule/cancel', { method: 'POST', body: { id: data.campaign.id } });
+  assert.equal(res.status, 200);
+  assert.equal(res.data.campaign.status, 'cancelled');
 });

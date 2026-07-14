@@ -66,6 +66,23 @@ check/uncheck individual people after applying them.
   pattern human-like.
 - Reports are saved to `reports/run-<timestamp>.json`.
 
+## Scheduled sends
+
+**"Schedule for later…"** snapshots the current recipients + message and sends
+at the chosen time — **without the app or a terminal open**. The first schedule
+installs a macOS launchd agent (`net.whatsthat.scheduler`, checks every 2 min)
+that sends headlessly using the saved WhatsApp session.
+
+- The Mac must be **on** at send time. If it's asleep, the send fires on next
+  wake — unless more than **6 hours** late, in which case it's marked *missed*
+  (a stale "see you tonight!" never goes out the next day).
+- If the app happens to be open, it does the sending itself with live progress.
+- Pending sends are listed in the UI with a countdown and a Cancel button;
+  finished ones show their result. Background activity logs to `scheduler.log`.
+- Don't open the app during the exact minutes a headless send is running —
+  the WhatsApp session can only be used by one process at a time.
+- To remove the background agent: `launchctl bootout gui/$(id -u) ~/Library/LaunchAgents/net.whatsthat.scheduler.plist`
+
 ## Good to know
 
 - **Unofficial automation.** This drives WhatsApp Web via

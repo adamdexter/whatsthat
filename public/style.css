@@ -309,3 +309,31 @@ td.phone-bad { color: var(--red); }
   padding: 14px;
   margin-top: 12px;
 }
+
+/* Scheduled sends */
+#schedule-list { margin-top: 16px; }
+.sched-title { font-size: 12px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em; margin-bottom: 6px; }
+.sched-item {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  flex-wrap: wrap;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--border);
+  font-size: 14px;
+}
+.sched-item:last-child { border-bottom: none; }
+.sched-when { font-weight: 600; }
+.sched-status { font-size: 12px; padding: 2px 8px; border-radius: 999px; }
+.sched-status.pending { background: #fef5e7; color: var(--amber); }
+.sched-status.running { background: #eaf2fd; color: #1f618d; }
+.sched-status.done { background: #e8f5ee; color: var(--green-dark); }
+.sched-status.failed, .sched-status.missed { background: #fdecea; color: var(--red); }
+.sched-status.cancelled { background: #eef1f2; color: var(--muted); }
+.sched-err { color: var(--red); font-size: 13px; }
+input[type="datetime-local"] {
+  font: inherit;
+  padding: 7px 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
