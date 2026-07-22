@@ -14,7 +14,9 @@ Sheet. Single user (Adam), ~30–40 recipients, 6–8 campaigns/year.
 - History: v1.1.0 = core app + send rules + autocomplete; v1.2.0 = scheduled sends;
   v1.2.1 = patch whatsapp-web.js for the July 2026 WA Web `_serialized`→`$1` breakage;
   v1.3.0 = launch-time auto-update + state restore across restarts + `--fresh`;
-  v1.3.1 = pin WA Web build + startup watchdog (2026-07-22 build hangs auth).
+  v1.3.1 = pin WA Web build + startup watchdog (2026-07-22 build hangs auth);
+  v1.4.0 = unpin (self-update defeats pinning), self-healing watchdog,
+  single-instance guard, clean signal teardown, stale-tab auto-reload.
 
 ## Feature map (v1.3.0)
 
@@ -88,13 +90,22 @@ Sheet. Single user (Adam), ~30–40 recipients, 6–8 campaigns/year.
   lib ships a fix. First move on weird send failures:
   `npm update whatsapp-web.js`; if already on latest, check the repo's recent
   issues/PRs — community patches usually appear within days.
-- **WhatsApp Web build pin** (`WEB_PIN` in `src/whatsapp.js`): startup is
-  pinned to build 2.3000.1043085068 served from `.wwebjs_cache/` — the
-  2026-07-22 build (…1043632247) hangs 1.34.7 between `authenticated` and
-  `ready`. The pin silently deactivates if the cached html is missing (fresh
-  machine), and a 3-min startup watchdog turns silent hangs into a UI error.
-  **Remove the pin when upstream ships a working release** (the auto-update
-  banner announces releases); override ad hoc with `WHATSTHAT_WEB_PIN=`.
+- **Do NOT pin the WhatsApp Web build** (tried in v1.3.1, removed in v1.4.0):
+  on 2.3000.x builds the page self-updates to the live version right after
+  loading pinned html, forcing a mid-startup reload that wedges the library
+  silently between `authenticated` and `ready` (in-flight evaluation dies;
+  rejection swallowed in the exposeFunction bridge). The same race happens
+  unpinned when WA ships a build mid-launch. Defense: the self-healing
+  startup watchdog in `src/whatsapp.js` (2 min stall → destroy + relaunch
+  once → then visible error). Diagnosis trick that cracked it: puppeteer
+  .connect to the running client's DevTools port (chrome arg
+  `--remote-debugging-port=0`, find via `lsof -p <chrome pid>`) and probe
+  `window.WWebJS` / `window.Debug.VERSION` read-only.
+- **One instance per port, enforced**: the WhatsApp client starts only after
+  `app.listen` succeeds — a second launch exits with a pointer to the running
+  instance (never boots an invisible client). SIGINT/SIGTERM destroy the
+  client deterministically (puppeteer's own signal handlers are disabled;
+  they've raced node's exit and left orphaned servers squatting on 3847).
 - `patches/whatsapp-web.js+1.34.7.patch` (applied by patch-package on
   postinstall) carries upstream PR #201850: tolerates WA Web 2.3000.x renaming
   message-key `_serialized` → `$1` (July 2026 breakage; symptom was

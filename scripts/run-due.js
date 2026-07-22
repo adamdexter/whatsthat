@@ -52,8 +52,22 @@ async function main() {
   const { createRunner } = require(path.join(ROOT, 'src', 'runner'));
   const wa = createWhatsApp({ mock: MOCK });
 
+  // Signal teardown is ours now (puppeteer's own handlers are disabled) —
+  // make sure an interrupted manual run doesn't leave a browser behind.
+  for (const sig of ['SIGINT', 'SIGTERM']) {
+    process.on(sig, async () => {
+      try {
+        await wa.destroy?.();
+      } catch {
+        /* browser already gone */
+      }
+      process.exit(130);
+    });
+  }
+
+  // 240s: enough for a slow boot plus one startup-watchdog relaunch.
   const ready = new Promise((resolve, reject) => {
-    const timeout = setTimeout(() => reject(new Error('WhatsApp client did not become ready within 120s')), 120000);
+    const timeout = setTimeout(() => reject(new Error('WhatsApp client did not become ready within 240s')), 240000);
     wa.onUpdate((state) => {
       if (state.status === 'ready') {
         clearTimeout(timeout);

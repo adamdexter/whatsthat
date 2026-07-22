@@ -925,6 +925,7 @@ async function boot() {
   S.google = state.google;
   S.running = state.running;
   S.schedule = state.schedule || [];
+  S.version = state.version;
   if (state.version) $('app-version').textContent = `v${state.version}`;
 
   const d = state.draft || {};
@@ -986,6 +987,13 @@ async function boot() {
   es.onopen = async () => {
     try {
       const st = await api('/api/state');
+      // A different version answering means the server was restarted on new
+      // code (or this is a stale tab from an older instance) — reload so the
+      // page and server agree.
+      if (st.version && S.version && st.version !== S.version) {
+        location.reload();
+        return;
+      }
       S.wa = st.wa;
       S.google = st.google;
       if (S.running && !st.running) {

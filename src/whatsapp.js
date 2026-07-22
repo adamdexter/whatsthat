@@ -1,19 +1,16 @@
 'use strict';
 
-const fs = require('fs');
 const path = require('path');
 const QRCode = require('qrcode');
 
-// WhatsApp Web build pin. WA ships new builds continuously, and a new build
-// can wedge whatsapp-web.js between 'authenticated' and 'ready' (first seen
-// 2026-07-22: build 2.3000.1043632247 hung startup; 2.3000.1043085068 is the
-// last build that reached ready on this session). While pinned, the cached
-// copy in .wwebjs_cache/ is served instead of whatever WA pushes. Remove the
-// pin once upstream ships a release that handles current builds — the
-// auto-update banner announces new releases. Override with
-// WHATSTHAT_WEB_PIN=<version>, or WHATSTHAT_WEB_PIN= (empty) to unpin.
-const WEB_PIN = process.env.WHATSTHAT_WEB_PIN ?? '2.3000.1043085068';
-const CACHE_DIR = path.join(__dirname, '..', '.wwebjs_cache');
+// NOTE on version pinning: don't. We tried pinning the WA Web build via
+// webVersion/webVersionCache (v1.3.1) — on 2.3000.x builds the page
+// self-updates to the live version right after loading the pinned html,
+// which forces a reload in the middle of the library's startup sequence and
+// wedges it silently (an in-flight page evaluation dies; the rejection is
+// swallowed inside the exposeFunction bridge and 'ready' never fires). The
+// same race happens unpinned whenever WA ships a build mid-launch, so the
+// real defense is the self-healing startup watchdog below.
 
 // Both implementations expose the same interface:
 //   initialize()                 — start connecting (resolves when startup settles)
@@ -31,15 +28,6 @@ function createRealWhatsApp() {
   const state = { status: 'starting', qrDataUrl: null, self: null, error: null };
   const emit = () => listeners.forEach((cb) => cb({ ...state }));
 
-  // Pin only when the build is actually cached: a strict pin with no cached
-  // copy would block first-ever linking on a fresh machine. Unpinned runs get
-  // whatever WA serves (and may hang — the startup watchdog surfaces that).
-  const pinnedHtml = path.join(CACHE_DIR, `${WEB_PIN}.html`);
-  const usePin = Boolean(WEB_PIN) && fs.existsSync(pinnedHtml);
-  if (WEB_PIN && !usePin) {
-    console.warn(`WhatsApp Web pin ${WEB_PIN} is not in .wwebjs_cache/ — running unpinned on the live version`);
-  }
-
   const client = new Client({
     // Anchored to the repo so running from any CWD reuses the same session
     // (and never drops credentials outside the gitignore's protection).
@@ -47,29 +35,58 @@ function createRealWhatsApp() {
     puppeteer: {
       headless: true,
       args: ['--no-sandbox', '--disable-setuid-sandbox'],
+      // Signal teardown is owned by whoever created us (server.js signal
+      // handler / run-due.js) via destroy() — not puppeteer's own handler,
+      // which has left orphaned node processes holding the port.
+      handleSIGINT: false,
+      handleSIGTERM: false,
       ...(process.env.WHATSTHAT_CHROME ? { executablePath: process.env.WHATSTHAT_CHROME } : {}),
     },
-    ...(usePin
-      ? {
-        webVersion: WEB_PIN,
-        webVersionCache: { type: 'local', path: CACHE_DIR, strict: true },
-      }
-      : {}),
   });
 
-  // A WA Web build change can wedge startup silently (an in-page evaluation
-  // that never returns) — the app then sits at "Authenticating…" forever.
-  // Surface that as an error instead. Not armed while showing the QR: that
+  // Self-healing startup watchdog. WhatsApp Web can hot-update and reload
+  // the page mid-startup (it ships several builds a day during churn weeks),
+  // which kills an in-flight init step whose rejection is swallowed inside
+  // the library — the app would sit at "Authenticating…" forever. When
+  // startup stalls, destroy the client and relaunch it once: the retry loads
+  // the settled live build directly and normally comes straight up. A second
+  // stall becomes a visible error. Not armed while showing the QR: that
   // state legitimately waits on a human.
-  const STARTUP_LIMIT_MS = 3 * 60 * 1000;
+  const STARTUP_LIMIT_MS = 2 * 60 * 1000;
   let startupTimer = null;
+  let startupRetried = false;
+  let retrying = false;
+  const stalled = () => state.status === 'starting' || state.status === 'authenticating';
   const armStartupWatchdog = () => {
     clearTimeout(startupTimer);
-    startupTimer = setTimeout(() => {
-      if (state.status === 'starting' || state.status === 'authenticating') {
+    startupTimer = setTimeout(async () => {
+      if (!stalled()) return;
+      if (!startupRetried) {
+        startupRetried = true;
+        retrying = true;
+        console.warn('WhatsApp startup stalled (likely a WhatsApp Web update mid-launch) — relaunching the client…');
+        try {
+          await client.destroy();
+        } catch {
+          /* browser may already be half-dead */
+        }
+        state.status = 'starting';
+        state.error = null;
+        emit();
+        try {
+          armStartupWatchdog();
+          await client.initialize();
+        } catch (err) {
+          state.status = 'error';
+          state.error = `WhatsApp relaunch failed: ${err.message}`;
+          emit();
+        } finally {
+          retrying = false;
+        }
+      } else {
         state.status = 'error';
         state.error =
-          'WhatsApp startup hung for 3+ minutes — usually a WhatsApp Web update breaking the automation library. Quit (Ctrl+C) and relaunch; if it persists, see CLAUDE.md → auto-update recovery.';
+          'WhatsApp startup stalled twice — WhatsApp Web is likely mid-rollout of a breaking change. Quit (Ctrl+C), wait a few minutes, and relaunch; the auto-updater will pick up a library fix as soon as one ships.';
         emit();
       }
     }, STARTUP_LIMIT_MS);
@@ -102,6 +119,7 @@ function createRealWhatsApp() {
     emit();
   });
   client.on('disconnected', (reason) => {
+    if (retrying) return; // expected while the watchdog relaunches the client
     state.status = 'disconnected';
     state.error = `Disconnected: ${reason}. Restart the app to reconnect.`;
     state.self = null;
@@ -114,6 +132,9 @@ function createRealWhatsApp() {
         armStartupWatchdog();
         await client.initialize();
       } catch (err) {
+        // A watchdog relaunch destroys the first client mid-flight; that
+        // rejection is expected and the retry owns the state from here.
+        if (retrying) return;
         state.status = 'error';
         state.error = `Failed to start WhatsApp client: ${err.message}`;
         emit();

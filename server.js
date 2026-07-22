@@ -336,10 +336,54 @@ if (MOCK) {
 }
 
 // ---------- Boot ----------
-app.listen(PORT, '127.0.0.1', () => {
+// The WhatsApp client starts only after the port is won: only ONE process may
+// use the session, and the port is the instance lock. A second launch exits
+// here with a pointer to the running (or hung) instance instead of silently
+// booting an invisible WhatsApp client with no UI.
+const httpServer = app.listen(PORT, '127.0.0.1', () => {
   const url = `http://localhost:${PORT}`;
   console.log(`WhatsThat v${VERSION} ${MOCK ? '(MOCK MODE) ' : ''}running at ${url}`);
   if (process.platform === 'darwin' && !NO_OPEN) execFile('open', [url]);
+  wa.initialize();
 });
 
-wa.initialize();
+httpServer.on('error', async (err) => {
+  if (err.code !== 'EADDRINUSE') {
+    console.error(`Server failed to start: ${err.message}`);
+    process.exit(1);
+  }
+  let detail = 'The occupant did not answer like a WhatsThat instance — find it with the lsof command below.';
+  try {
+    const res = await fetch(`http://127.0.0.1:${PORT}/api/state`, { signal: AbortSignal.timeout(2000) });
+    const s = await res.json();
+    detail = `It is WhatsThat v${s.version} (WhatsApp: ${s.wa?.status ?? 'unknown'}). Use that instance, or quit it first.`;
+  } catch {
+    /* keep the generic detail */
+  }
+  console.error(
+    `\n✗ Another process is already using port ${PORT}. ${detail}\n` +
+      `  If it is a stuck leftover instance, end it with:\n` +
+      `  kill $(lsof -nP -iTCP:${PORT} -sTCP:LISTEN -t)\n`
+  );
+  process.exit(1);
+});
+
+// Deterministic teardown: destroy the WhatsApp client (closes its browser) on
+// Ctrl+C / SIGTERM. Left to default handling, the browser's own signal hooks
+// have raced node's exit and left orphaned servers squatting on the port.
+let shuttingDown = false;
+for (const sig of ['SIGINT', 'SIGTERM']) {
+  process.on(sig, async () => {
+    if (shuttingDown) process.exit(130);
+    shuttingDown = true;
+    console.log('\nShutting down…');
+    const force = setTimeout(() => process.exit(130), 5000);
+    if (force.unref) force.unref();
+    try {
+      await wa.destroy?.();
+    } catch {
+      /* browser already gone */
+    }
+    process.exit(0);
+  });
+}
