@@ -12,9 +12,10 @@ Sheet. Single user (Adam), ~30–40 recipients, 6–8 campaigns/year.
   commit as the change.
 - Tag every version bump: `git tag v<X.Y.Z>` after committing.
 - History: v1.1.0 = core app + send rules + autocomplete; v1.2.0 = scheduled sends;
-  v1.2.1 = patch whatsapp-web.js for the July 2026 WA Web `_serialized`→`$1` breakage.
+  v1.2.1 = patch whatsapp-web.js for the July 2026 WA Web `_serialized`→`$1` breakage;
+  v1.3.0 = launch-time auto-update + state restore across restarts + `--fresh`.
 
-## Feature map (v1.2.0)
+## Feature map (v1.3.0)
 
 - **Contacts**: Google Sheet (OAuth, read-only scope) or pasted CSV/TSV; row 1
   headers, `phone` column required; E.164 normalization (bare 10-digit → +1).
@@ -28,6 +29,17 @@ Sheet. Single user (Adam), ~30–40 recipients, 6–8 campaigns/year.
 - **Scheduling**: snapshot campaigns in `schedule.local.json`; in-app 30s tick
   + launchd agent (`net.whatsthat.scheduler`, every 2 min → `scripts/run-due.js`)
   sends with the app closed; 6h staleness cutoff → `missed`.
+- **Auto-update**: `npm start` runs `scripts/launch.js` → `src/update.js`
+  checks the npm registry and installs a newer whatsapp-web.js before the
+  server boots (skipped in mock, via `WHATSTHAT_NO_UPDATE=1`, or while a
+  scheduled send is running). Result lands in `update.local.json`; the UI
+  shows a banner. On a version change the version-pinned patch is retired to
+  `patches-retired/` first (restored automatically if the install fails).
+- **State restore**: the draft also persists the loaded contact list
+  (`contactsCache`), exact selection (`selectedIds`), and preview choice, so
+  a restart repopulates everything ("restored from last session" note in the
+  UI). `npm start --fresh` (or `-- --fresh`, or `node server.js --fresh`)
+  sets the draft aside as `draft.backup.local.json` and boots blank.
 
 ## Testing
 
@@ -53,8 +65,11 @@ Sheet. Single user (Adam), ~30–40 recipients, 6–8 campaigns/year.
 | `.wwebjs_auth/` | WhatsApp session — treat like a password |
 | `google.local.json` | App OAuth (client id/secret + **read-only** token) |
 | `google-setup.local.json` | Write-scope token used only by `scripts/` |
-| `draft.local.json` | Template, sheet URL, delays, send-rule filters |
+| `draft.local.json` | Template, sheet URL, delays, filters, contacts cache, selection |
+| `draft.backup.local.json` | Previous draft, set aside by a `--fresh` boot |
 | `schedule.local.json` | Scheduled campaigns + lifecycle state |
+| `update.local.json` | What the launch-time auto-updater did last |
+| `patches-retired/` | Patches the auto-updater retired on a version change |
 | `scheduler.log` | launchd runner output |
 
 ## Architecture invariants
@@ -75,9 +90,12 @@ Sheet. Single user (Adam), ~30–40 recipients, 6–8 campaigns/year.
 - `patches/whatsapp-web.js+1.34.7.patch` (applied by patch-package on
   postinstall) carries upstream PR #201850: tolerates WA Web 2.3000.x renaming
   message-key `_serialized` → `$1` (July 2026 breakage; symptom was
-  "Execution context was destroyed" on send). When upstream ships a fixed
-  release: `npm install whatsapp-web.js@latest`, delete the patch file, and
-  drop the postinstall script if no other patches remain.
+  "Execution context was destroyed" on send). The auto-updater retires it to
+  `patches-retired/` when it installs a newer release. **Auto-update
+  recovery**: if sends break right after an auto-update, the new release
+  likely lacks the fix — move the patch back from `patches-retired/` to
+  `patches/` and `npm install whatsapp-web.js@<previous>` (the version is in
+  `update.local.json`).
 
 ## User's setup (context)
 

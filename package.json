@@ -1,10 +1,10 @@
 {
   "name": "whatsthat",
-  "version": "1.2.1",
+  "version": "1.3.0",
   "description": "Personalized 1:1 WhatsApp campaign sender with Google Sheets contact import",
   "private": true,
   "scripts": {
-    "start": "node server.js",
+    "start": "node scripts/launch.js",
     "mock": "WHATSTHAT_MOCK=1 node server.js",
     "test": "node --test \"test/*.test.js\"",
     "postinstall": "patch-package"

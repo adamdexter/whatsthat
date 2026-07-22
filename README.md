@@ -13,8 +13,18 @@ contacts or messages.
 
 ```bash
 npm install
-npm start        # opens http://localhost:3847
+npm start            # opens http://localhost:3847
+npm start --fresh    # same, but without restoring your last session's draft
 ```
+
+Every `npm start` checks for a newer `whatsapp-web.js` (the library that talks
+to WhatsApp Web) and installs it before the app boots — WhatsApp Web changes
+regularly and staying current is the main defense. Set `WHATSTHAT_NO_UPDATE=1`
+to skip the check.
+
+The app remembers where you left off: your message, loaded contact list, and
+exact selection are restored on the next launch. `--fresh` starts blank
+instead (the previous draft is kept as `draft.backup.local.json`).
 
 Then follow the numbered steps in the UI:
 

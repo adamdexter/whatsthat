@@ -19,3 +19,6 @@ reports/
 *.local.json
 *.log
 .env
+
+# Patches retired by the launch-time auto-updater (restorable, see CLAUDE.md)
+patches-retired/

@@ -12,6 +12,7 @@ const S = {
   savedFilters: {}, // from the persisted draft, applied when contacts load
   previews: new Map(), // contact id -> { text, unknown, empty }
   previewId: null,
+  contactsCache: null, // last loaded contact list, persisted for restore on restart
   running: false,
   progressCount: 0,
   totalToSend: 0,
@@ -155,7 +156,10 @@ function renderGoogle() {
 }
 
 // ---------- Card 3: Contacts ----------
-function setContacts(data) {
+// opts.restore = { selectedIds, previewId, loadedAt } when repopulating from
+// the saved draft after a restart: the exact selection wins over the
+// filter-derived one, and a note says the list came from the last session.
+function setContacts(data, opts = {}) {
   S.headers = data.headers || [];
   S.contacts = data.contacts || [];
   // Restore saved send rules for columns that exist in this sheet, then let
@@ -166,8 +170,36 @@ function setContacts(data) {
       S.filters[h] = new Set(values);
     }
   }
-  applyFiltersToSelection();
-  S.previewId = S.contacts.find((c) => S.selected.has(c.id))?.id ?? S.contacts.find((c) => c.phone)?.id ?? null;
+  const restore = opts.restore;
+  if (restore && Array.isArray(restore.selectedIds)) {
+    const valid = new Set(S.contacts.filter((c) => c.phone).map((c) => c.id));
+    S.selected = new Set(restore.selectedIds.filter((id) => valid.has(id)));
+  } else {
+    applyFiltersToSelection();
+  }
+  S.previewId =
+    (restore != null && S.contacts.some((c) => c.id === restore.previewId && c.phone) ? restore.previewId : null) ??
+    S.contacts.find((c) => S.selected.has(c.id))?.id ??
+    S.contacts.find((c) => c.phone)?.id ??
+    null;
+
+  if (restore) {
+    S.contactsCache = data; // keep the original loadedAt/source
+  } else if (S.contacts.length) {
+    S.contactsCache = { headers: S.headers, contacts: S.contacts, source: opts.source || 'sheet', loadedAt: new Date().toISOString() };
+  } else {
+    S.contactsCache = null;
+  }
+
+  const note = $('contacts-note');
+  if (restore && S.contacts.length) {
+    const when = restore.loadedAt ? new Date(restore.loadedAt).toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) : 'last session';
+    note.textContent = `↩︎ Restored from your last session (loaded ${when}) — Load from Sheet to refresh.`;
+    note.classList.remove('hidden');
+  } else {
+    note.classList.add('hidden');
+  }
+
   const errEl = $('contacts-error');
   if (data.error) {
     errEl.textContent = data.error;
@@ -179,6 +211,7 @@ function setContacts(data) {
   renderContacts();
   renderChips();
   refreshPreviews();
+  if (!restore) saveDraft();
 }
 
 // ---------- Send rules (filters on categorical columns like rank/Status) ----------
@@ -319,6 +352,7 @@ function renderContacts() {
       renderCountLine();
       renderRunButton();
       renderPreviewWarnings();
+      saveDraft();
     };
   });
   $('check-all').onchange = (e) => {
@@ -326,6 +360,7 @@ function renderContacts() {
     renderContacts();
     renderRunButton();
     renderPreviewWarnings();
+    saveDraft();
   };
   renderCountLine();
   renderRunButton();
@@ -501,6 +536,7 @@ function renderPreviewSelect() {
   sel.onchange = () => {
     S.previewId = Number(sel.value);
     renderPreviewBubble();
+    saveDraft();
   };
 }
 
@@ -574,6 +610,7 @@ function renderPreviewWarnings() {
       });
       renderContacts();
       renderPreviewWarnings();
+      saveDraft();
     };
   }
   renderRunButton();
@@ -851,6 +888,9 @@ const saveDraft = debounce(() => {
       delayMinMs: getDelaysMs().delayMinMs,
       delayMaxMs: getDelaysMs().delayMaxMs,
       filters,
+      contactsCache: S.contactsCache,
+      selectedIds: [...S.selected],
+      previewId: S.previewId,
     },
   }).catch(() => {});
 }, 600);
@@ -862,6 +902,22 @@ function onTemplateChanged() {
 }
 
 // ---------- Boot ----------
+// What the launch-time auto-updater did (from update.local.json via /api/state).
+function renderBootNotice(u) {
+  const el = $('boot-notice');
+  if (u.updated) {
+    el.innerHTML = `<div class="notice">⬆️ whatsapp-web.js auto-updated <b>v${esc(u.previous)} → v${esc(u.installed)}</b> at launch.${
+      u.patchRetired ? ' The local compatibility patch was retired — if sends start failing, see CLAUDE.md → auto-update recovery.' : ''
+    }</div>`;
+    el.classList.remove('hidden');
+  } else if (u.error) {
+    el.innerHTML = `<div class="notice">Auto-update check failed at launch (${esc(u.error)}) — running whatsapp-web.js v${esc(u.installed || '?')}.</div>`;
+    el.classList.remove('hidden');
+  } else {
+    el.classList.add('hidden');
+  }
+}
+
 async function boot() {
   const state = await api('/api/state');
   S.mock = state.mock;
@@ -879,6 +935,15 @@ async function boot() {
   if (d.delayMaxMs) $('delay-max').value = Math.round(d.delayMaxMs / 1000);
   if (d.filters && typeof d.filters === 'object') S.savedFilters = d.filters;
 
+  // Repopulate the contact list and selection exactly as they were before the
+  // last shutdown (skipped after `npm start --fresh` — the draft is empty).
+  if (d.contactsCache && Array.isArray(d.contactsCache.contacts) && d.contactsCache.contacts.length) {
+    setContacts(d.contactsCache, {
+      restore: { selectedIds: d.selectedIds, previewId: d.previewId, loadedAt: d.contactsCache.loadedAt },
+    });
+  }
+
+  renderBootNotice(state.update || {});
   renderPills();
   renderWa();
   renderGoogle();
@@ -964,7 +1029,7 @@ async function boot() {
   };
   $('btn-load-csv').onclick = async () => {
     try {
-      setContacts(await api('/api/contacts/csv', { method: 'POST', body: { csv: $('csv-text').value } }));
+      setContacts(await api('/api/contacts/csv', { method: 'POST', body: { csv: $('csv-text').value } }), { source: 'csv' });
     } catch (err) {
       setContacts({ headers: [], contacts: [], error: err.message });
     }

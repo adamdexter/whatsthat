@@ -24,8 +24,20 @@ const REPORTS_DIR = path.join(DATA_DIR, 'reports');
 
 const NO_AGENT = process.env.WHATSTHAT_NO_AGENT === '1' || MOCK; // tests/mock skip launchctl
 
+// --fresh: boot without the previous session's draft (message, loaded
+// contacts, selection). `npm start --fresh` reaches us as npm_config_fresh;
+// `npm start -- --fresh` and `node server.js --fresh` as argv. The draft is
+// set aside, not deleted, so one fresh boot is recoverable.
+const FRESH = process.argv.includes('--fresh') || process.env.npm_config_fresh === 'true';
+const DRAFT_FILE = path.join(DATA_DIR, 'draft.local.json');
+if (FRESH && fs.existsSync(DRAFT_FILE)) {
+  fs.renameSync(DRAFT_FILE, path.join(DATA_DIR, 'draft.backup.local.json'));
+  console.log('Fresh start: previous draft set aside as draft.backup.local.json');
+}
+
 const googleStore = new JsonStore(path.join(DATA_DIR, 'google.local.json'));
-const draftStore = new JsonStore(path.join(DATA_DIR, 'draft.local.json'));
+const draftStore = new JsonStore(DRAFT_FILE);
+const updateStore = new JsonStore(path.join(DATA_DIR, 'update.local.json'));
 const scheduleStore = createScheduleStore(path.join(DATA_DIR, 'schedule.local.json'));
 
 const sheetsApi = createSheets({
@@ -88,11 +100,12 @@ app.get('/api/state', (req, res) => {
     lastRun,
     schedule: scheduleStore.list(),
     agentInstalled: NO_AGENT ? true : isAgentInstalled(),
+    update: updateStore.read(),
   });
 });
 
 app.post('/api/draft', (req, res) => {
-  const allowed = ['template', 'sheetUrl', 'tabName', 'delayMinMs', 'delayMaxMs', 'filters'];
+  const allowed = ['template', 'sheetUrl', 'tabName', 'delayMinMs', 'delayMaxMs', 'filters', 'contactsCache', 'selectedIds', 'previewId'];
   const patch = {};
   for (const key of allowed) {
     if (key in (req.body || {})) patch[key] = req.body[key];
