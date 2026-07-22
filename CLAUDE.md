@@ -11,7 +11,8 @@ Sheet. Single user (Adam), ~30–40 recipients, 6–8 campaigns/year.
 - Semver: **minor** bump for features, **patch** for fixes. Bump in the same
   commit as the change.
 - Tag every version bump: `git tag v<X.Y.Z>` after committing.
-- History: v1.1.0 = core app + send rules + autocomplete; v1.2.0 = scheduled sends.
+- History: v1.1.0 = core app + send rules + autocomplete; v1.2.0 = scheduled sends;
+  v1.2.1 = patch whatsapp-web.js for the July 2026 WA Web `_serialized`→`$1` breakage.
 
 ## Feature map (v1.2.0)
 
@@ -69,7 +70,14 @@ Sheet. Single user (Adam), ~30–40 recipients, 6–8 campaigns/year.
   `brew upgrade node`).
 - whatsapp-web.js is unofficial: a WhatsApp Web update can break it until the
   lib ships a fix. First move on weird send failures:
-  `npm update whatsapp-web.js`.
+  `npm update whatsapp-web.js`; if already on latest, check the repo's recent
+  issues/PRs — community patches usually appear within days.
+- `patches/whatsapp-web.js+1.34.7.patch` (applied by patch-package on
+  postinstall) carries upstream PR #201850: tolerates WA Web 2.3000.x renaming
+  message-key `_serialized` → `$1` (July 2026 breakage; symptom was
+  "Execution context was destroyed" on send). When upstream ships a fixed
+  release: `npm install whatsapp-web.js@latest`, delete the patch file, and
+  drop the postinstall script if no other patches remain.
 
 ## User's setup (context)
 
