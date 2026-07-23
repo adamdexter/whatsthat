@@ -16,17 +16,20 @@ Sheet. Single user (Adam), ~30–40 recipients, 6–8 campaigns/year.
   v1.3.0 = launch-time auto-update + state restore across restarts + `--fresh`;
   v1.3.1 = pin WA Web build + startup watchdog (2026-07-22 build hangs auth);
   v1.4.0 = unpin (self-update defeats pinning), self-healing watchdog,
-  single-instance guard, clean signal teardown, stale-tab auto-reload.
+  single-instance guard, clean signal teardown, stale-tab auto-reload;
+  v1.5.0 = inverse selection, WhatsApp-markup preview, cancel-button lifecycle.
 
-## Feature map (v1.3.0)
+## Feature map (v1.5.0)
 
 - **Contacts**: Google Sheet (OAuth, read-only scope) or pasted CSV/TSV; row 1
   headers, `phone` column required; E.164 normalization (bare 10-digit → +1).
 - **Send rules**: columns with ≤8 distinct repeating values (rank, Status)
-  become toggle chips that drive selection; persisted in the draft.
+  become toggle chips that drive selection; persisted in the draft. Manual
+  per-contact checkboxes + an Inverse-selection button on the contact table.
 - **Templates**: `{{variable}}` per column, case-insensitive; `{`-triggered
   autocomplete; strict rendering (empty/unknown variable ⇒ contact fails, never
-  sends a broken message).
+  sends a broken message); preview renders WhatsApp markup (*bold*, _italic_,
+  ~strike~, `code`) via `public/format.js` — sent text keeps the raw markers.
 - **Sending**: test-send-to-self; sequential run with randomized 4–10s delays;
   live SSE progress; incremental crash-safe JSON reports in `reports/`.
 - **Scheduling**: snapshot campaigns in `schedule.local.json`; in-app 30s tick

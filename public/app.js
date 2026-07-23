@@ -334,6 +334,9 @@ function renderContacts() {
   const validIds = S.contacts.filter((c) => c.phone).map((c) => c.id);
   const allSelected = validIds.length > 0 && validIds.every((id) => S.selected.has(id));
   wrap.innerHTML = `
+    <div class="contacts-toolbar">
+      <button type="button" id="btn-inverse">Inverse selection</button>
+    </div>
     <table>
       <thead><tr>
         <th><input type="checkbox" id="check-all" ${allSelected ? 'checked' : ''} /></th>
@@ -343,6 +346,13 @@ function renderContacts() {
       <tbody>${rows}</tbody>
     </table>
     <div class="count-line" id="count-line"></div>`;
+
+  $('btn-inverse').onclick = () => {
+    S.selected = new Set(validIds.filter((id) => !S.selected.has(id)));
+    renderContacts();
+    renderPreviewWarnings();
+    saveDraft();
+  };
 
   wrap.querySelectorAll('tbody input[type=checkbox]').forEach((cb) => {
     cb.onchange = () => {
@@ -566,7 +576,9 @@ function renderPreviewBubble() {
     bubble.textContent = 'Load contacts to see a personalized preview.';
   } else {
     bubble.className = 'bubble';
-    bubble.textContent = p.text;
+    // Rendered like WhatsApp will render it (*bold*, _italic_, ~strike~,
+    // `code`) — waFormatToHtml escapes everything first.
+    bubble.innerHTML = waFormatToHtml(p.text);
   }
   renderPreviewWarnings();
 }
@@ -707,6 +719,7 @@ async function startRun() {
   $('progress-list').innerHTML = '';
   $('progress-bar').style.width = '0%';
   $('progress-label').textContent = `0 / ${contacts.length}`;
+  $('btn-cancel').classList.remove('hidden');
   $('run-progress').classList.remove('hidden');
   try {
     await api('/api/run', {
@@ -840,6 +853,7 @@ function onRunProgress(e) {
   S.running = true;
   S.progressCount = e.index + 1;
   S.totalToSend = e.total;
+  $('btn-cancel').classList.remove('hidden'); // a scheduled run may start without startRun()
   $('run-progress').classList.remove('hidden');
   $('progress-bar').style.width = `${(S.progressCount / e.total) * 100}%`;
   $('progress-label').textContent = `${S.progressCount} / ${e.total}`;
@@ -858,6 +872,7 @@ function onRunProgress(e) {
 
 function onRunDone(e) {
   S.running = false;
+  $('btn-cancel').classList.add('hidden'); // nothing left to cancel
   const s = e.summary;
   const el = $('run-report');
   el.innerHTML = `
