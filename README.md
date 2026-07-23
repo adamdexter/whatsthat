@@ -1,125 +1,206 @@
 # WhatsThat 💬
 
-Send personalized 1:1 WhatsApp messages to a list of people — from **your own
-number**, fully automated, with a per-contact success/failure report.
+**Personal WhatsApp messages, at the scale of a real personal network.**
 
-Contacts come from a **Google Sheet** (or pasted CSV). Messages are written
-once with `{{variables}}` that are filled in per person.
+Some messages shouldn't come from a marketing platform. When you're inviting
+thirty or forty people you actually know to dinner, a talk, or a round of
+golf, a broadcast blast from a business account is the wrong tone — and
+pasting the same message into WhatsApp forty times, changing the name each
+time, is an evening you won't get back (and one wrong paste away from sending
+"Hey Mike!" to Sarah).
 
-Everything runs **locally on your Mac**. No third-party service ever sees your
-contacts or messages.
+WhatsThat is the middle path. It sends **individually personalized 1:1
+WhatsApp messages from your own number** — each one rendered from a template
+with the recipient's own name and details, delivered one at a time with
+natural pauses, exactly as if you'd typed them yourself. Your contact list
+stays in a private Google Sheet you control. Everything runs **locally on
+your Mac**: no service, no server, no third party ever sees your contacts or
+your messages.
+
+It was built for a simple, recurring need — a personal outreach list touched
+a handful of times a year — and it optimizes for trust over volume: test on
+yourself before anyone else gets a message, refuse to send anything with a
+broken variable, keep a written report of exactly what happened.
+
+## What it does
+
+- **Contacts from a private Google Sheet** (read-only access) or pasted
+  CSV/spreadsheet cells.
+- **Templates with `{{variables}}`** filled per person, with autocomplete and
+  a live per-contact preview that renders WhatsApp formatting (*bold*,
+  _italic_, ~strikethrough~, `code`) the way the recipient will see it.
+- **Send rules**: columns like `rank` or `Status` become one-click filters;
+  fine-tune with per-person checkboxes and an Inverse-selection button.
+- **Test on yourself first**, then send with live progress and a saved
+  per-contact report.
+- **Schedule for later** — fires even with the app closed (the Mac just has
+  to be on).
+- **Remembers where you left off** — message, contact list, and exact
+  selection survive restarts.
+- **Keeps itself working** — checks for library updates at every launch and
+  recovers automatically from WhatsApp Web's frequent silent changes.
 
 ## Quick start
 
 ```bash
 npm install
 npm start            # opens http://localhost:3847
-npm start --fresh    # same, but without restoring your last session's draft
+npm start --fresh    # same, but start blank instead of restoring last session
 ```
 
-Every `npm start` checks for a newer `whatsapp-web.js` (the library that talks
-to WhatsApp Web) and installs it before the app boots — WhatsApp Web changes
-regularly and staying current is the main defense. Set `WHATSTHAT_NO_UPDATE=1`
-to skip the check.
+The first launch downloads a private Chromium build (~1 min) used only for
+the WhatsApp connection. Then follow the numbered cards in the UI — they're
+ordered the way you'll use them.
 
-The app remembers where you left off: your message, loaded contact list, and
-exact selection are restored on the next launch. `--fresh` starts blank
-instead (the previous draft is kept as `draft.backup.local.json`).
+## One-time setup
 
-Then follow the numbered steps in the UI:
+### 1. Link WhatsApp
 
-1. **WhatsApp** — scan the QR code once (phone → Settings → Linked Devices →
-   Link a Device). The session is saved in `.wwebjs_auth/` for future runs.
-2. **Google** — one-time OAuth setup (instructions are in the UI card).
-3. **Contacts** — paste your Google Sheet URL and load.
-4. **Message** — write your template; click a `{{chip}}` to insert a variable.
-5. **Send** — "Send test to me" delivers a rendered preview to your own
-   WhatsApp; then hit Send and walk away.
+Scan the QR code shown in the app: phone → **Settings → Linked Devices →
+Link a Device**. This is the same mechanism as WhatsApp Web in a browser —
+messages come from *your* number. The session is saved locally in
+`.wwebjs_auth/` so future launches connect automatically.
 
-## The sheet format
+### 2. Connect Google Sheets
 
-Row 1 is the header row and must include a `phone` column. Every other column
-becomes a template variable, matched case-insensitively:
+The app walks you through creating OAuth credentials (~10 minutes, one time).
+The app asks for **read-only** Sheets access — it can never modify your data.
+
+Notes:
+- **Google Workspace** accounts: choose an *Internal* consent screen — the
+  connection never expires.
+- Personal Gmail: an *External* consent screen in *Testing* mode works, but
+  Google expires it every 7 days (reconnecting is one click).
+
+### 3. Your contact sheet
+
+Row 1 is headers and must include a `phone` column. Every other column
+automatically becomes a template variable:
 
 | firstName | lastName | nickname | phone        | rank | Status |
 |-----------|----------|----------|--------------|------|--------|
 | Ada       | Lovelace | Ada      | 415-555-0134 | FC   | Active |
 
-Template:
+- Bare 10-digit numbers are treated as US (`+1`); international numbers need
+  their country code with a leading `+`.
+- A row without a valid phone number is shown, but excluded from sending.
+- `node scripts/create-sheet.js` can build a ready-made, formatted contact
+  sheet for you (asks separately for one-time write access; the app itself
+  stays read-only).
 
-```
-Hey {{nickname}}! It's Adam — see you Friday! 🎉
-```
+## Sending a campaign
 
-Phone numbers: bare 10-digit numbers are treated as US (`+1`). International
-numbers must include their country code with a leading `+`.
+1. **Load contacts** — paste your Sheet URL and click *Load from Sheet* (or
+   expand the CSV option and paste cells straight from any spreadsheet).
+2. **Choose recipients** — columns with a few repeating values (like `rank`,
+   `Status`) appear as **Send rules**: toggle the values you want and the
+   matching people are selected. Fine-tune with the checkboxes, *select all*,
+   or **Inverse selection** (flips every checkbox — handy for "everyone
+   except these few").
+3. **Write the message** — type `{` for variable autocomplete, or click a
+   `{{chip}}`. WhatsApp formatting works: `*bold*`, `_italic_`,
+   `~strikethrough~`, `` `code` ``. The preview below renders it exactly as
+   the recipient's phone will, for any contact you pick.
+4. **Send a test to yourself** — the fully rendered message arrives in your
+   own WhatsApp ("message yourself" chat). Iterate until it feels right.
+5. **Send** — confirm the recipient count and go. Messages go out one at a
+   time with randomized 4–10 s pauses (configurable), with live per-person
+   progress. Walk away if you like: a full report lands in
+   `reports/run-<timestamp>.json`.
 
-`scripts/create-sheet.js` creates a ready-made "WhatsThat Contacts" sheet
-(populated, formatted, with rank/Status dropdowns) — it asks for Sheets write
-access with a separate one-time consent; the app itself stays read-only.
+### Safety rails you can rely on
 
-## Send rules
+- A contact with an **empty or missing variable value is failed, never sent
+  a broken message** — the UI warns you before the run and offers to
+  deselect them.
+- Numbers not registered on WhatsApp are reported as failures, not
+  silently skipped.
+- A send that WhatsApp doesn't positively confirm is reported as an
+  **error** — the app never shows a ✓ it can't stand behind.
+- Reports are written incrementally, so even a crash mid-run leaves an
+  accurate record.
 
-Columns with a small set of repeating values (like `rank` or `Status`) show up
-as **Send rules** above the contacts table. Toggle values to select exactly
-who matches — e.g. rank `EA` + `FC`, Status `Active`. A column with no toggled
-values is ignored. Rules are remembered between sessions; you can still
-check/uncheck individual people after applying them.
+## Scheduling
 
-## Safety rails
+**Schedule for later…** snapshots the current recipients and message and
+sends at the chosen time — the app and terminal can be closed. The first
+schedule installs a small macOS background agent
+(`net.whatsthat.scheduler`, checks every 2 minutes).
 
-- A contact whose template variable is **empty** (or references a missing
-  column) is **failed, not sent** a broken message. The UI warns before you run.
-- Numbers are checked for WhatsApp registration before sending; unregistered
-  numbers show up as failures in the report.
-- Randomized 4–10s delays between sends (configurable) keep the sending
-  pattern human-like.
-- Reports are saved to `reports/run-<timestamp>.json`.
+- The Mac must be **on** at send time. Asleep past the send time? It fires
+  on wake — unless it's more than **6 hours** late, in which case it's
+  marked *missed* (a stale "see you tonight!" never goes out a day later).
+- If the app is open at the time, it sends with live progress instead.
+- Pending sends show a countdown and Cancel in the UI; background activity
+  logs to `scheduler.log`.
+- Remove the agent anytime:
+  `launchctl bootout gui/$(id -u) ~/Library/LaunchAgents/net.whatsthat.scheduler.plist`
 
-## Scheduled sends
+## Between sessions
 
-**"Schedule for later…"** snapshots the current recipients + message and sends
-at the chosen time — **without the app or a terminal open**. The first schedule
-installs a macOS launchd agent (`net.whatsthat.scheduler`, checks every 2 min)
-that sends headlessly using the saved WhatsApp session.
+- **Everything is restored on relaunch** — message, loaded contacts, and
+  your exact selection ("Restored from your last session" appears above the
+  contact list). Start clean instead with `npm start --fresh`; the previous
+  draft is kept as `draft.backup.local.json`, so nothing is lost.
+- **Auto-update**: every `npm start` checks for a newer version of the
+  WhatsApp library and installs it before the app boots (WhatsApp Web
+  changes constantly; staying current is the best defense). A banner in the
+  app tells you when this happened. Skip with `WHATSTHAT_NO_UPDATE=1`.
 
-- The Mac must be **on** at send time. If it's asleep, the send fires on next
-  wake — unless more than **6 hours** late, in which case it's marked *missed*
-  (a stale "see you tonight!" never goes out the next day).
-- If the app happens to be open, it does the sending itself with live progress.
-- Pending sends are listed in the UI with a countdown and a Cancel button;
-  finished ones show their result. Background activity logs to `scheduler.log`.
-- Don't open the app during the exact minutes a headless send is running —
-  the WhatsApp session can only be used by one process at a time.
-- To remove the background agent: `launchctl bootout gui/$(id -u) ~/Library/LaunchAgents/net.whatsthat.scheduler.plist`
+## When something goes wrong
 
-## Good to know
+- **"Another process is already using port 3847"** — WhatsThat is already
+  running (or a stuck leftover is). The message includes the exact command
+  to clear it. Only one instance can use the WhatsApp session at a time.
+- **Startup stalls on "Authenticating…"** — usually WhatsApp shipping a new
+  Web build mid-launch. The app now detects the stall within ~2 minutes and
+  relaunches its browser automatically; if it stalls twice you'll get a
+  visible error with next steps rather than an endless spinner.
+- **"Disconnected"** — restart the app (`npm start`). If WhatsApp shows the
+  QR again, your linked-device session expired: re-scan once.
+- **Send failures right after an update** — WhatsApp Web changes can break
+  the automation library until a fix ships; the app carries local
+  compatibility patches and updates itself at launch. If a campaign
+  suddenly fails wholesale, wait for/check a library update and retry.
+
+## Your data
+
+Everything lives in the project folder, all gitignored:
+
+| Path                       | Contents                                       |
+|----------------------------|------------------------------------------------|
+| `.wwebjs_auth/`            | WhatsApp session — **treat like a password**   |
+| `google.local.json`        | Google OAuth credentials + read-only token     |
+| `draft.local.json`         | Message, sheet URL, selection, contact cache   |
+| `draft.backup.local.json`  | Previous draft, set aside by a `--fresh` start |
+| `schedule.local.json`      | Scheduled sends and their status               |
+| `update.local.json`        | What the launch-time auto-updater did          |
+| `reports/`                 | Per-run send reports                           |
+| `scheduler.log`            | Background scheduler output                    |
+
+Nothing ever leaves your machine except the WhatsApp messages themselves and
+read-only Google Sheets API calls.
+
+## Honest limitations
 
 - **Unofficial automation.** This drives WhatsApp Web via
-  [whatsapp-web.js](https://github.com/pedroslopez/whatsapp-web.js), which is
-  not sanctioned by Meta. At this volume (dozens of messages a few times a
-  year, to people who know you) the risk is low, but it is not zero.
-- **Google consent screen**: if your OAuth consent screen is *External* and in
-  *Testing* mode, Google expires the connection every 7 days — you'll just
-  need to click Connect again. *Internal* (Google Workspace) never expires.
-- First launch downloads a Chromium build for the WhatsApp client (~1 min).
-- If WhatsApp shows "Disconnected", restart the app (`npm start`).
+  [whatsapp-web.js](https://github.com/pedroslopez/whatsapp-web.js), which
+  is not sanctioned by Meta. At this volume — dozens of messages a few times
+  a year, to people who know you and want to hear from you — the practical
+  risk is low, but it is not zero. Don't use this for spam; beyond the
+  ethics, that *is* how numbers get banned.
+- WhatsApp Web changes frequently and can break the library until a fix
+  ships (the auto-updater + bundled patches exist precisely for this).
+- Scheduled sends need the Mac powered on — linked-device sending cannot
+  work with the machine off.
 
 ## Development
 
 ```bash
-npm test         # unit + end-to-end tests (server runs in mock mode)
-npm run mock     # run the app with a fake WhatsApp client (no real sends)
+npm test         # 76 unit + end-to-end tests (mock mode; no real sends)
+npm run mock     # run the app against a fake WhatsApp client
 ```
 
 Mock-mode rules: numbers ending `99` are "not on WhatsApp"; numbers ending
-`98` fail on send.
-
-## Local data (all gitignored)
-
-| Path                | Contents                                  |
-|---------------------|-------------------------------------------|
-| `.wwebjs_auth/`     | WhatsApp session — treat like a password  |
-| `google.local.json` | Google OAuth credentials + tokens         |
-| `draft.local.json`  | Your saved template / sheet URL / delays  |
-| `reports/`          | Per-run send reports                      |
+`98` fail on send. See `CLAUDE.md` for project conventions, architecture
+invariants, and the full change history.

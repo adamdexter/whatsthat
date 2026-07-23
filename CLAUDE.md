@@ -20,7 +20,7 @@ Sheet. Single user (Adam), ~30–40 recipients, 6–8 campaigns/year.
   v1.5.0 = inverse selection, WhatsApp-markup preview, cancel-button lifecycle;
   v1.5.1 = fix silent no-op sends to LID-migrated chats (repeat test-send bug).
 
-## Feature map (v1.5.0)
+## Feature map (v1.5.1)
 
 - **Contacts**: Google Sheet (OAuth, read-only scope) or pasted CSV/TSV; row 1
   headers, `phone` column required; E.164 normalization (bare 10-digit → +1).
@@ -50,20 +50,27 @@ Sheet. Single user (Adam), ~30–40 recipients, 6–8 campaigns/year.
 
 ## Testing
 
-- `npm test` — 55 unit + e2e tests (server boots in mock mode; no real
+- `npm test` — 76 unit + e2e tests (server boots in mock mode; no real
   WhatsApp/Google). e2e uses `WHATSTHAT_TICK_MS=200` for fast scheduler ticks.
 - Mock mode: `WHATSTHAT_MOCK=1` (numbers ending 99 = not on WhatsApp, 98 =
   send fails; mock always shows a QR first, then auto-readies).
 - Frontend changes: verify in-browser against a mock server on a spare port
   (`PORT=3852 WHATSTHAT_DATA_DIR=<tmp>`) — NEVER against the user's live
-  instance on 3847.
+  instance on 3847. Never send on the user's live session without him; a
+  read-only puppeteer.connect to the client's DevTools port is the approved
+  way to inspect live state (see invariants below).
 - Browser-automation gotchas learned the hard way: synthetic `type` needs OS
   window focus — use `document.execCommand('insertText', …)` in page JS
-  instead (fires real input events). Check for stale servers with
+  instead (fires real input events; an element inside a closed `<details>`
+  must be revealed with `.open = true` first). Check for stale servers with
   `lsof -nP -iTCP:<port> -sTCP:LISTEN` (the `-ti :p1,:p2` form silently
   matches nothing).
-- **Never fully tested**: a real send on a live WhatsApp account (needs the
-  user's linked session). Everything up to that boundary is covered.
+- **Live-verified** (2026-07-22): QR link, session restore, connect→ready,
+  and repeated test-send-to-self on the user's real account.
+- **Never yet done on live**: a full campaign run to real contacts, a real
+  scheduled send, and the auto-updater actually installing a newer release
+  (that path has only run against fakes — first exercised whenever upstream
+  ships a release newer than 1.34.7).
 
 ## Local data (all gitignored, never commit)
 
@@ -126,6 +133,31 @@ Sheet. Single user (Adam), ~30–40 recipients, 6–8 campaigns/year.
   back from `patches-retired/` to `patches/` and
   `npm install whatsapp-web.js@<previous>` (version in `update.local.json`).
 
+## Status & outstanding (as of 2026-07-22, v1.5.1)
+
+Working end-to-end on the user's live account: link, connect (with
+self-healing against WA Web's mid-launch build swaps), repeated test-sends.
+The 2026-07-22 WA churn produced three live-debugged fixes, all carried in
+`patches/whatsapp-web.js+1.34.7.patch` (details in invariants below):
+`_serialized`→`$1` rename, sent-message alternate-wid lookup, and the
+LID-migrated chat lookup miss that silently no-op'd sends.
+
+Outstanding / watchlist:
+- **First full live campaign run** (and first real scheduled send) still
+  pending — everything up to that boundary is verified.
+- **Upstream release watch**: when whatsapp-web.js ships > 1.34.7, the
+  auto-updater installs it and retires our patch to `patches-retired/`. If
+  sends then break, follow "Auto-update recovery" below. Track the LID/PN
+  work upstream (PRs #201839/#201850/#201853, issues #201849/#201857).
+- **Auto-updater's real-install path** has only run against fakes; its first
+  real execution deserves a glance at the boot log and banner.
+- **Watchdog relaunch** (v1.4.0) has never fired against a real wedge.
+- Never clarified: the user once asked for autocomplete "as well as a…" —
+  the second half never arrived; ask if it comes up.
+- Deferred idea: import contacts from the Google Workspace Directory
+  (People API `people.listDirectoryPeople`, `directory.readonly`) — needs
+  admin-enabled sharing; directory profiles often lack mobile numbers.
+
 ## User's setup (context)
 
 - Google consent screen is on his Workspace; sheet: "WhatsThat Contacts"
@@ -133,6 +165,3 @@ Sheet. Single user (Adam), ~30–40 recipients, 6–8 campaigns/year.
   `firstName lastName nickname phone email rank Status`; rank dropdown
   Prospect/EA/FC/MM, Status Active/Inactive.
 - One contact has no phone number in the sheet (auto-excluded until added).
-- Deferred idea: import contacts straight from the Google Workspace Directory
-  (People API `people.listDirectoryPeople`, `directory.readonly`) — needs
-  admin-enabled sharing; directory profiles often lack mobile numbers.
