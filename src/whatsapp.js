@@ -146,11 +146,17 @@ function createRealWhatsApp() {
       const id = await client.getNumberId(e164.replace(/^\+/, ''));
       return id ? id._serialized : null;
     },
+    // client.sendMessage resolving to undefined means the library could not
+    // find the chat (or the sent message) — upstream treats that as a quiet
+    // success, but for us an unconfirmed send is a failure: surface it
+    // instead of reporting a ✓ for a message that may never have left.
     async send(chatId, text) {
-      await client.sendMessage(chatId, text);
+      const sent = await client.sendMessage(chatId, text);
+      if (!sent) throw new Error('WhatsApp did not confirm the send (chat lookup failed) — check the phone before assuming it went out');
     },
     async sendToSelf(text) {
-      await client.sendMessage(client.info.wid._serialized, text);
+      const sent = await client.sendMessage(client.info.wid._serialized, text);
+      if (!sent) throw new Error('WhatsApp did not confirm the send (chat lookup failed) — check your phone before retrying');
     },
     async logout() {
       await client.logout();

@@ -17,7 +17,8 @@ Sheet. Single user (Adam), ~30–40 recipients, 6–8 campaigns/year.
   v1.3.1 = pin WA Web build + startup watchdog (2026-07-22 build hangs auth);
   v1.4.0 = unpin (self-update defeats pinning), self-healing watchdog,
   single-instance guard, clean signal teardown, stale-tab auto-reload;
-  v1.5.0 = inverse selection, WhatsApp-markup preview, cancel-button lifecycle.
+  v1.5.0 = inverse selection, WhatsApp-markup preview, cancel-button lifecycle;
+  v1.5.1 = fix silent no-op sends to LID-migrated chats (repeat test-send bug).
 
 ## Feature map (v1.5.0)
 
@@ -110,14 +111,20 @@ Sheet. Single user (Adam), ~30–40 recipients, 6–8 campaigns/year.
   client deterministically (puppeteer's own signal handlers are disabled;
   they've raced node's exit and left orphaned servers squatting on 3847).
 - `patches/whatsapp-web.js+1.34.7.patch` (applied by patch-package on
-  postinstall) carries upstream PR #201850: tolerates WA Web 2.3000.x renaming
-  message-key `_serialized` → `$1` (July 2026 breakage; symptom was
-  "Execution context was destroyed" on send). The auto-updater retires it to
-  `patches-retired/` when it installs a newer release. **Auto-update
-  recovery**: if sends break right after an auto-update, the new release
-  likely lacks the fix — move the patch back from `patches-retired/` to
-  `patches/` and `npm install whatsapp-web.js@<previous>` (the version is in
-  `update.local.json`).
+  postinstall) carries three fixes for the July 2026 WA Web churn:
+  upstream PR #201850 (message-key `_serialized` → `$1` rename tolerance;
+  symptom was "Execution context was destroyed" on send), upstream PR
+  #201839 (sent message indexed under the sibling lid/pn wid), and our own
+  getChat fallback via `WAWebApiContact.getAlternateUserWid` — after LID
+  migration a chat (notably the self-chat) can be indexed ONLY under the
+  lid wid, and the pn-wid miss made upstream sendMessage silently send
+  nothing (first test-send worked, every later one no-opped). `src/whatsapp.js`
+  also treats an unconfirmed send (undefined return) as an error, never a ✓.
+  The auto-updater retires the patch to `patches-retired/` when it installs
+  a newer release. **Auto-update recovery**: if sends break right after an
+  auto-update, the new release likely lacks these fixes — move the patch
+  back from `patches-retired/` to `patches/` and
+  `npm install whatsapp-web.js@<previous>` (version in `update.local.json`).
 
 ## User's setup (context)
 

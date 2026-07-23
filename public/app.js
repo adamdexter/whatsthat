@@ -679,7 +679,8 @@ async function testSend() {
       method: 'POST',
       body: { template: $('template').value, fields: contact.fields },
     });
-    status.textContent = `✓ Sent to your own WhatsApp (rendered for ${displayName(contact)})`;
+    // Timestamp so a repeat test-send visibly updates the line.
+    status.textContent = `✓ Sent to your own WhatsApp at ${new Date().toLocaleTimeString()} (rendered for ${displayName(contact)})`;
   } catch (err) {
     status.textContent = `✗ ${err.message}`;
   }

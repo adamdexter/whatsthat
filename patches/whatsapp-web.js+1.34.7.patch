@@ -1,17 +1,76 @@
 diff --git a/node_modules/whatsapp-web.js/src/util/Injected/Utils.js b/node_modules/whatsapp-web.js/src/util/Injected/Utils.js
-index 540078a..520f97f 100644
+index 540078a..ecbf410 100644
 --- a/node_modules/whatsapp-web.js/src/util/Injected/Utils.js
 +++ b/node_modules/whatsapp-web.js/src/util/Injected/Utils.js
-@@ -582,7 +582,7 @@ exports.LoadUtils = () => {
+@@ -580,9 +580,65 @@ exports.LoadUtils = () => {
  
-         return window
+         if (options.waitUntilMsgSent) await sendMsgResultPromise;
+ 
+-        return window
++        let sentMsg = window
              .require('WAWebCollections')
 -            .Msg.get(newMsgKey._serialized);
 +            .Msg.get(window.WWebJS.getMsgKeyId(newMsgKey));
++
++        // The sent message can be indexed under a key built with the chat's
++        // sibling wid (lid <-> phone number); the random id part of the key
++        // does not depend on the wid, so look it up directly in the chat's
++        // own collection. (Upstream PR #201839.)
++        if (!sentMsg) {
++            sentMsg = chat.msgs
++                .getModelsArray()
++                .find((m) => m.id.id === newMsgKey.id);
++        }
++
++        let altWid;
++        if (
++            !sentMsg &&
++            typeof chat.id?.isUser === 'function' &&
++            chat.id.isUser()
++        ) {
++            altWid = window
++                .require('WAWebApiContact')
++                .getAlternateUserWid(chat.id);
++            if (altWid) {
++                const altMsgKey = new (window.require('WAWebMsgKey'))({
++                    from: from,
++                    to: altWid,
++                    id: newId,
++                    participant: participant,
++                    selfDir: 'out',
++                });
++                sentMsg =
++                    window
++                        .require('WAWebCollections')
++                        .Msg.get(window.WWebJS.getMsgKeyId(altMsgKey)) ||
++                    window
++                        .require('WAWebCollections')
++                        .Chat.get(altWid)
++                        ?.msgs.getModelsArray()
++                        .find((m) => m.id.id === newMsgKey.id);
++            }
++        }
++
++        // Keep a debug trail so clients can inspect why the sent message
++        // could not be found in the collections
++        if (!sentMsg) {
++            window.WWebJS.lastSendMessageDebug = {
++                newMsgKey: window.WWebJS.getMsgKeyId(newMsgKey),
++                chatId: window.WWebJS.getMsgKeyId(chat.id) || String(chat.id),
++                altWid: altWid ? String(altWid) : null,
++                lastChatMsgKeys: chat.msgs
++                    .getModelsArray()
++                    .slice(-3)
++                    .map((m) => window.WWebJS.getMsgKeyId(m.id)),
++                time: Date.now(),
++            };
++        }
++
++        return sentMsg;
      };
  
      window.WWebJS.editMessage = async (msg, content, options = {}) => {
-@@ -625,7 +625,9 @@ exports.LoadUtils = () => {
+@@ -625,7 +681,9 @@ exports.LoadUtils = () => {
          await window
              .require('WAWebSendMessageEditAction')
              .sendMessageEdit(msg, content, internalOptions);
@@ -22,7 +81,7 @@ index 540078a..520f97f 100644
      };
  
      window.WWebJS.toStickerData = async (mediaInfo) => {
-@@ -834,6 +836,20 @@ exports.LoadUtils = () => {
+@@ -834,6 +892,20 @@ exports.LoadUtils = () => {
              });
          }
  
@@ -43,7 +102,50 @@ index 540078a..520f97f 100644
          delete msg.pendingAckUpdate;
  
          return msg;
-@@ -917,12 +933,34 @@ exports.LoadUtils = () => {
+@@ -861,13 +933,39 @@ exports.LoadUtils = () => {
+                 chat = null;
+             }
+         } else {
+-            chat =
+-                window.require('WAWebCollections').Chat.get(chatWid) ||
+-                (
++            chat = window.require('WAWebCollections').Chat.get(chatWid);
++
++            // After WhatsApp's LID migration a user's chat can be indexed
++            // under the sibling wid (lid <-> phone number). Check the
++            // alternate before creating anything — findOrCreateLatestChat
++            // on the wrong wid can silently yield no chat, which upstream
++            // Client.sendMessage turns into a no-op "successful" send.
++            if (
++                !chat &&
++                typeof chatWid.isUser === 'function' &&
++                chatWid.isUser()
++            ) {
++                try {
++                    const altWid = window
++                        .require('WAWebApiContact')
++                        .getAlternateUserWid(chatWid);
++                    if (altWid) {
++                        chat = window
++                            .require('WAWebCollections')
++                            .Chat.get(altWid);
++                    }
++                } catch (ignoredError) {
++                    /* no mapping available — fall through */
++                }
++            }
++
++            if (!chat) {
++                chat = (
+                     await window
+                         .require('WAWebFindChatAction')
+                         .findOrCreateLatestChat(chatWid)
+                 )?.chat;
++            }
+         }
+ 
+         return getAsModel && chat
+@@ -917,12 +1015,34 @@ exports.LoadUtils = () => {
          };
      };
  
@@ -82,7 +184,7 @@ index 540078a..520f97f 100644
      };
  
      window.WWebJS.getChannels = async () => {
-@@ -957,7 +995,12 @@ exports.LoadUtils = () => {
+@@ -957,7 +1077,12 @@ exports.LoadUtils = () => {
              const groupMetadata =
                  window.require('WAWebCollections').GroupMetadata ||
                  window.require('WAWebCollections').WAWebGroupMetadataCollection;
@@ -96,7 +198,7 @@ index 540078a..520f97f 100644
              const { toPn } = window.require('WAWebLidMigrationUtils');
              const serializedMetadata = chat.groupMetadata.serialize();
              for (const p of serializedMetadata.participants || []) {
-@@ -981,16 +1024,17 @@ exports.LoadUtils = () => {
+@@ -981,16 +1106,17 @@ exports.LoadUtils = () => {
  
          model.lastMessage = null;
          if (model.msgs && model.msgs.length) {
