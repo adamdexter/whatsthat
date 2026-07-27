@@ -50,7 +50,7 @@ async function main() {
   log('App is not running — booting headless WhatsApp client');
   const { createWhatsApp } = require(path.join(ROOT, 'src', 'whatsapp'));
   const { createRunner } = require(path.join(ROOT, 'src', 'runner'));
-  const wa = createWhatsApp({ mock: MOCK });
+  const wa = createWhatsApp({ mock: MOCK, dataDir: DATA_DIR });
 
   // Signal teardown is ours now (puppeteer's own handlers are disabled) —
   // make sure an interrupted manual run doesn't leave a browser behind.

@@ -22,16 +22,17 @@ const QRCode = require('qrcode');
 //   logout()
 // status: 'starting' | 'qr' | 'authenticating' | 'ready' | 'disconnected' | 'error'
 
-function createRealWhatsApp() {
+function createRealWhatsApp({ dataDir = path.join(__dirname, '..') } = {}) {
   const { Client, LocalAuth } = require('whatsapp-web.js');
   const listeners = new Set();
   const state = { status: 'starting', qrDataUrl: null, self: null, error: null };
   const emit = () => listeners.forEach((cb) => cb({ ...state }));
 
   const client = new Client({
-    // Anchored to the repo so running from any CWD reuses the same session
-    // (and never drops credentials outside the gitignore's protection).
-    authStrategy: new LocalAuth({ dataPath: path.join(__dirname, '..', '.wwebjs_auth') }),
+    // The session lives under dataDir (defaults to the repo root, so running
+    // from any CWD reuses the same session and credentials stay behind the
+    // gitignore; the packaged app passes its Application Support dir).
+    authStrategy: new LocalAuth({ dataPath: path.join(dataDir, '.wwebjs_auth') }),
     puppeteer: {
       headless: true,
       args: ['--no-sandbox', '--disable-setuid-sandbox'],
@@ -169,6 +170,7 @@ function createRealWhatsApp() {
     async destroy() {
       await client.destroy();
     },
+    _authDir: path.join(dataDir, '.wwebjs_auth'), // introspection for tests
   };
 }
 
@@ -222,8 +224,8 @@ function createMockWhatsApp() {
   };
 }
 
-function createWhatsApp({ mock = false } = {}) {
-  return mock ? createMockWhatsApp() : createRealWhatsApp();
+function createWhatsApp({ mock = false, dataDir } = {}) {
+  return mock ? createMockWhatsApp() : createRealWhatsApp({ dataDir });
 }
 
 module.exports = { createWhatsApp };

@@ -22,3 +22,4 @@ reports/
 
 # Patches retired by the launch-time auto-updater (restorable, see CLAUDE.md)
 patches-retired/
+dist/

@@ -15,14 +15,19 @@ const { createWhatsApp } = require('./src/whatsapp');
 const { createScheduleStore, isAgentInstalled, installAgent } = require('./src/schedule');
 
 const VERSION = require('./package.json').version;
-const PORT = Number(process.env.PORT || 3847);
+// PORT=0 asks the OS for an ephemeral port (the app shell does this in
+// packaged mode); the actual port is announced on stdout at listen time.
+const PORT = Number(process.env.PORT ?? 3847);
 const MOCK = process.env.WHATSTHAT_MOCK === '1';
-const NO_OPEN = process.env.WHATSTHAT_NO_OPEN === '1';
+// Running inside the packaged Mac app: the shell owns opening windows,
+// scheduling (app-resident tick), and engine updates (per-release pinning).
+const PACKAGED = process.env.WHATSTHAT_PACKAGED === '1';
+const NO_OPEN = process.env.WHATSTHAT_NO_OPEN === '1' || PACKAGED;
 const ROOT = __dirname;
 const DATA_DIR = process.env.WHATSTHAT_DATA_DIR || ROOT; // overridable for tests
 const REPORTS_DIR = path.join(DATA_DIR, 'reports');
 
-const NO_AGENT = process.env.WHATSTHAT_NO_AGENT === '1' || MOCK; // tests/mock skip launchctl
+const NO_AGENT = process.env.WHATSTHAT_NO_AGENT === '1' || MOCK || PACKAGED; // tests/mock/app skip launchctl
 
 // --fresh: boot without the previous session's draft (message, loaded
 // contacts, selection). `npm start --fresh` reaches us as npm_config_fresh;
@@ -40,11 +45,12 @@ const draftStore = new JsonStore(DRAFT_FILE);
 const updateStore = new JsonStore(path.join(DATA_DIR, 'update.local.json'));
 const scheduleStore = createScheduleStore(path.join(DATA_DIR, 'schedule.local.json'));
 
-const sheetsApi = createSheets({
-  store: googleStore,
-  redirectUri: `http://localhost:${PORT}/api/google/callback`,
-});
-const wa = createWhatsApp({ mock: MOCK });
+// Constructed at listen time: with PORT=0 the real port (needed for the
+// OAuth redirect URI and the origin allowlist) is only known then. Requests
+// can't arrive before the 'listening' callback runs, so routes are safe to
+// reference this.
+let sheetsApi;
+const wa = createWhatsApp({ mock: MOCK, dataDir: DATA_DIR });
 const runner = createRunner({ wa, reportsDir: REPORTS_DIR });
 
 const app = express();
@@ -57,7 +63,7 @@ const escapeHtml = (s) =>
 // Reject state-changing requests from other origins (a malicious web page
 // could otherwise fire POSTs at localhost). GET navigations (OAuth callback)
 // don't carry an Origin header, and same-origin fetches match.
-const ALLOWED_ORIGINS = new Set([`http://localhost:${PORT}`, `http://127.0.0.1:${PORT}`]);
+const ALLOWED_ORIGINS = new Set(); // populated at listen time (PORT=0 support)
 app.use('/api', (req, res, next) => {
   if (req.method !== 'GET' && req.headers.origin && !ALLOWED_ORIGINS.has(req.headers.origin)) {
     return res.status(403).json({ error: 'Cross-origin requests are not allowed' });
@@ -93,6 +99,7 @@ app.get('/api/state', (req, res) => {
   res.json({
     version: VERSION,
     mock: MOCK,
+    packaged: PACKAGED,
     wa: wa.getState(),
     google: sheetsApi.status(),
     draft: draftStore.read(),
@@ -341,7 +348,21 @@ if (MOCK) {
 // here with a pointer to the running (or hung) instance instead of silently
 // booting an invisible WhatsApp client with no UI.
 const httpServer = app.listen(PORT, '127.0.0.1', () => {
-  const url = `http://localhost:${PORT}`;
+  // On EADDRINUSE the listen callback can still fire (via express's once
+  // wrapper on the error path) with address() null — that path belongs to
+  // the 'error' handler below.
+  const addr = httpServer.address();
+  if (!addr) return;
+  const actualPort = addr.port;
+  ALLOWED_ORIGINS.add(`http://localhost:${actualPort}`);
+  ALLOWED_ORIGINS.add(`http://127.0.0.1:${actualPort}`);
+  sheetsApi = createSheets({
+    store: googleStore,
+    redirectUri: `http://localhost:${actualPort}/api/google/callback`,
+  });
+  // Machine-readable handshake — the Mac app shell parses this line.
+  console.log(`whatsthat-listening ${actualPort}`);
+  const url = `http://localhost:${actualPort}`;
   console.log(`WhatsThat v${VERSION} ${MOCK ? '(MOCK MODE) ' : ''}running at ${url}`);
   if (process.platform === 'darwin' && !NO_OPEN) execFile('open', [url]);
   wa.initialize();

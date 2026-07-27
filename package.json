@@ -1,13 +1,14 @@
 {
   "name": "whatsthat",
-  "version": "1.5.1",
+  "version": "1.6.0",
   "description": "Personalized 1:1 WhatsApp campaign sender with Google Sheets contact import",
   "private": true,
   "scripts": {
     "start": "node scripts/launch.js",
     "mock": "WHATSTHAT_MOCK=1 node server.js",
     "test": "node --test \"test/*.test.js\"",
-    "postinstall": "patch-package"
+    "postinstall": "patch-package",
+    "app": "electron app/main.js"
   },
   "dependencies": {
     "express": "^5.2.1",
@@ -16,6 +17,7 @@
     "whatsapp-web.js": "^1.34.7"
   },
   "devDependencies": {
+    "electron": "^43.2.0",
     "patch-package": "^8.0.1"
   }
 }

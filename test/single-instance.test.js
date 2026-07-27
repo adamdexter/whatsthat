@@ -52,21 +52,24 @@ const waitExit = (child, timeoutMs = 10000) =>
 test('second instance on the same port exits with a helpful message', async () => {
   const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'whatsthat-single-'));
   const first = startServer(dataDir);
-  await waitForServer();
+  try {
+    await waitForServer();
 
-  const second = startServer(dataDir, { capture: true });
-  let out = '';
-  second.stdout.on('data', (d) => (out += d));
-  second.stderr.on('data', (d) => (out += d));
-  const { code } = await waitExit(second);
+    const second = startServer(dataDir, { capture: true });
+    let out = '';
+    second.stdout.on('data', (d) => (out += d));
+    second.stderr.on('data', (d) => (out += d));
+    const { code } = await waitExit(second);
 
-  assert.equal(code, 1, 'second instance exits non-zero');
-  assert.match(out, /already using port 3933/);
-  assert.match(out, /WhatsThat v\d+\.\d+\.\d+/, 'identifies the running instance');
-  assert.match(out, /lsof -nP -iTCP:3933/, 'gives the cleanup command');
-
-  first.kill();
-  await waitExit(first);
+    assert.equal(code, 1, 'second instance exits non-zero');
+    assert.match(out, /already using port 3933/);
+    assert.match(out, /WhatsThat v\d+\.\d+\.\d+/, 'identifies the running instance');
+    assert.match(out, /lsof -nP -iTCP:3933/, 'gives the cleanup command');
+  } finally {
+    // Always reap — a leaked child keeps the test-runner process alive forever.
+    first.kill();
+    await waitExit(first).catch(() => first.kill('SIGKILL'));
+  }
 });
 
 test('SIGTERM shuts the instance down cleanly (exit 0, port freed)', async () => {

@@ -194,10 +194,26 @@ read-only Google Sheets API calls.
 - Scheduled sends need the Mac powered on — linked-device sending cannot
   work with the machine off.
 
+## Run it as a Mac app
+
+```bash
+npm run app      # WhatsThat in its own window, with a 💬 menu-bar icon
+```
+
+Same engine, same data — but in a real window instead of a browser tab,
+with WhatsApp status and pending scheduled sends visible from the menu bar.
+Closing the window keeps the engine (and scheduled sends) running; Cmd+Q
+quits fully. If a terminal-started instance is already running, the app
+attaches to it rather than starting a second one — and leaves it running
+when you quit.
+
+A double-clickable, installable `WhatsThat.app` (no dev tools needed) is the
+next milestone — see the roadmap in `CLAUDE.md`.
+
 ## Development
 
 ```bash
-npm test         # 76 unit + end-to-end tests (mock mode; no real sends)
+npm test         # 80 unit + end-to-end tests (mock mode; no real sends)
 npm run mock     # run the app against a fake WhatsApp client
 ```
 

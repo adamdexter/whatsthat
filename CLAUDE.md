@@ -18,9 +18,11 @@ Sheet. Single user (Adam), ~30–40 recipients, 6–8 campaigns/year.
   v1.4.0 = unpin (self-update defeats pinning), self-healing watchdog,
   single-instance guard, clean signal teardown, stale-tab auto-reload;
   v1.5.0 = inverse selection, WhatsApp-markup preview, cancel-button lifecycle;
-  v1.5.1 = fix silent no-op sends to LID-migrated chats (repeat test-send bug).
+  v1.5.1 = fix silent no-op sends to LID-migrated chats (repeat test-send bug);
+  v1.6.0 = Mac app shell Phase A (Electron window+tray, attach-or-spawn,
+  PORT=0 handshake, WHATSTHAT_PACKAGED, dataDir-based auth path).
 
-## Feature map (v1.5.1)
+## Feature map (v1.6.0)
 
 - **Contacts**: Google Sheet (OAuth, read-only scope) or pasted CSV/TSV; row 1
   headers, `phone` column required; E.164 normalization (bare 10-digit → +1).
@@ -47,11 +49,30 @@ Sheet. Single user (Adam), ~30–40 recipients, 6–8 campaigns/year.
   a restart repopulates everything ("restored from last session" note in the
   UI). `npm start --fresh` (or `-- --fresh`, or `node server.js --fresh`)
   sets the draft aside as `draft.backup.local.json` and boots blank.
+- **Mac app shell** (`app/main.js`, `npm run app` — Phase A of the approved
+  Electron plan): window + 💬 tray (status, pending sends) around the
+  engine. Attaches to a terminal-started instance on 3847 when one answers
+  `/api/state`; otherwise spawns `scripts/launch.js` with
+  `ELECTRON_RUN_AS_NODE=1` (no system node needed) and parses the
+  `whatsthat-listening <port>` stdout handshake. Cmd+Q SIGTERMs only a child
+  it spawned; closing the window hides it (engine + scheduling stay alive).
+  Engine flags added for it: `PORT=0` (ephemeral + handshake; origins and
+  the OAuth redirect are built at listen time), `WHATSTHAT_PACKAGED=1`
+  (implies NO_OPEN + NO_AGENT; exposed as `packaged` in `/api/state`),
+  `createWhatsApp({ dataDir })` for the auth-session location.
 
 ## Testing
 
-- `npm test` — 76 unit + e2e tests (server boots in mock mode; no real
+- `npm test` — 80 unit + e2e tests (server boots in mock mode; no real
   WhatsApp/Google). e2e uses `WHATSTHAT_TICK_MS=200` for fast scheduler ticks.
+- App shell smoke (manual, mock): `PORT=3852 WHATSTHAT_MOCK=1
+  WHATSTHAT_DATA_DIR=<tmp> npm run app` → window + tray appear, UI works;
+  quit via `osascript -e 'quit app "Electron"'` and assert zero surviving
+  processes + port freed. Attach mode: start a mock `node server.js` first,
+  launch the shell, confirm its log has NO `whatsthat-listening` line (it
+  attached), and that quitting the shell leaves the server running.
+- Express gotcha: on EADDRINUSE the `app.listen` callback still fires with
+  `server.address()` null — guard before dereferencing (bit us in v1.6.0).
 - Mock mode: `WHATSTHAT_MOCK=1` (numbers ending 99 = not on WhatsApp, 98 =
   send fails; mock always shows a QR first, then auto-readies).
 - Frontend changes: verify in-browser against a mock server on a spare port
@@ -141,6 +162,19 @@ The 2026-07-22 WA churn produced three live-debugged fixes, all carried in
 `patches/whatsapp-web.js+1.34.7.patch` (details in invariants below):
 `_serialized`→`$1` rename, sent-message alternate-wid lookup, and the
 LID-migrated chat lookup miss that silently no-op'd sends.
+
+Mac-app roadmap (Electron plan approved 2026-07-26; Phase A shipped v1.6.0):
+- **Phase B (v1.7.0)**: electron-builder packaging (engine unpacked from
+  asar), data → `~/Library/Application Support/WhatsThat`, first-run
+  onboarding (consent screen, Chromium download via `@puppeteer/browsers`
+  + existing `WHATSTHAT_CHROME` override, QR, CSV-first contacts),
+  app-resident scheduling replaces launchd in packaged mode, API token
+  hardening. Packaged mode pins the engine per release — no live npm
+  updates on user machines.
+- **Phase C (v2.0.0)**: signing/notarization (needs Adam's Apple Developer
+  ID — his call), electron-updater + public GitHub Releases as the
+  fix-delivery channel, .icns icon, LICENSE.
+- Ship gate: no distribution before a full live campaign has succeeded.
 
 Outstanding / watchlist:
 - **First full live campaign run** (and first real scheduled send) still
