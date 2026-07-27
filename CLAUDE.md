@@ -22,9 +22,11 @@ Sheet. Single user (Adam), ~30–40 recipients, 6–8 campaigns/year.
   v1.6.0 = Mac app shell Phase A (Electron window+tray, attach-or-spawn,
   PORT=0 handshake, WHATSTHAT_PACKAGED, dataDir-based auth path);
   v1.7.0 = macOS-native design system (frameless window, AppKit-style
-  controls, dark mode).
+  controls, dark mode);
+  v1.8.0 = tabbed layout (Contacts / Message segmented control; Setup via
+  gear + clickable WhatsApp capsule, auto-opens when link needed).
 
-## Feature map (v1.7.0)
+## Feature map (v1.8.0)
 
 - **Contacts**: Google Sheet (OAuth, read-only scope) or pasted CSV/TSV; row 1
   headers, `phone` column required; E.164 normalization (bare 10-digit → +1).
@@ -62,6 +64,13 @@ Sheet. Single user (Adam), ~30–40 recipients, 6–8 campaigns/year.
   the OAuth redirect are built at listen time), `WHATSTHAT_PACKAGED=1`
   (implies NO_OPEN + NO_AGENT; exposed as `packaged` in `/api/state`),
   `createWhatsApp({ dataDir })` for the auth-session location.
+- **Tabbed layout** (v1.8.0): toolbar segmented control switches
+  body[data-view] between `contacts` and `message` (cards shown per view via
+  CSS; boot notice stays global). Setup (WhatsApp + Google cards) is NOT a
+  tab: gear button / clickable WhatsApp capsule open it (`openSetup(pinned)`),
+  it auto-opens on boot until WA is ready and on a live `qr` transition, and
+  auto-advances to the last tab when `ready` arrives un-pinned. Last tab
+  persists as `activeTab` in the draft.
 - **Design system** (v1.7.0, `public/style.css`): macOS-native tokens with
   full dark mode (`prefers-color-scheme` variables — every new style must
   work in both), AppKit-style controls (push buttons, custom checkboxes,
@@ -177,7 +186,7 @@ LID-migrated chat lookup miss that silently no-op'd sends.
 
 Mac-app roadmap (Electron plan approved 2026-07-26; Phase A shipped v1.6.0,
 native design system v1.7.0):
-- **Phase B (v1.8.0)**: electron-builder packaging (engine unpacked from
+- **Phase B (v1.9.0)**: electron-builder packaging (engine unpacked from
   asar), data → `~/Library/Application Support/WhatsThat`, first-run
   onboarding (consent screen, Chromium download via `@puppeteer/browsers`
   + existing `WHATSTHAT_CHROME` override, QR, CSV-first contacts),

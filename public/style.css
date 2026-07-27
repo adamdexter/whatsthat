@@ -110,8 +110,60 @@ body.in-app .header-inner { max-width: none; padding-left: 84px; padding-right: 
 h1 { font-size: 13px; font-weight: 600; margin: 0; letter-spacing: -0.01em; }
 .version { font-size: 11px; font-weight: 400; color: var(--muted); margin-left: 4px; }
 
+/* Segmented-control tabs (Finder/System Settings idiom) */
+.tabs {
+  display: flex;
+  gap: 2px;
+  background: var(--fill-tertiary);
+  padding: 2px;
+  border-radius: 8px;
+  -webkit-app-region: no-drag;
+}
+.tabs button {
+  border: none;
+  box-shadow: none;
+  background: transparent;
+  padding: 2px 18px;
+  min-height: 22px;
+  border-radius: 6px;
+  font-size: 12.5px;
+  font-weight: 500;
+  color: var(--text);
+}
+.tabs button:hover:not(.active) { background: color-mix(in srgb, var(--text) 6%, transparent); }
+.tabs button.active {
+  background: var(--card);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.14), 0 0 0 0.5px rgba(0, 0, 0, 0.04);
+  font-weight: 600;
+}
+
+.icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 7px;
+  min-height: 22px;
+  color: var(--muted);
+  background: transparent;
+  border: none;
+  box-shadow: none;
+  border-radius: 6px;
+}
+.icon-btn:hover:not(:disabled) { background: var(--fill-tertiary); color: var(--text); }
+.icon-btn.active { background: var(--fill-tertiary); color: var(--accent-text); }
+
+/* View switching: each tab reveals its cards; the boot notice is global */
+main > .card { display: none; }
+body[data-view="setup"] #card-wa,
+body[data-view="setup"] #card-google { display: block; }
+body[data-view="contacts"] #card-contacts { display: block; }
+body[data-view="message"] #card-message,
+body[data-view="message"] #card-send { display: block; }
+
 /* Status capsules: neutral fill + colored dot, like native status items */
-.pills { display: flex; gap: 6px; flex-wrap: wrap; -webkit-app-region: no-drag; }
+.pills { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; -webkit-app-region: no-drag; }
+.pill.clickable { cursor: pointer; }
+.pill.clickable:hover { background: var(--fill-tertiary); }
 .pill {
   display: inline-flex;
   align-items: center;
@@ -384,7 +436,8 @@ details[open] summary { margin-bottom: 8px; }
 
 /* ---------- Contacts table ---------- */
 .contacts-toolbar { margin: 10px 0 6px; }
-#contacts-table-wrap { overflow-x: auto; overflow-y: auto; max-height: 420px; margin-top: 8px; border-radius: 8px; }
+/* The Contacts tab owns the viewport — let the list breathe */
+#contacts-table-wrap { overflow-x: auto; overflow-y: auto; max-height: max(320px, calc(100vh - 400px)); margin-top: 8px; border-radius: 8px; }
 table { border-collapse: collapse; width: 100%; font-size: 13px; }
 th, td {
   text-align: left;

@@ -7,14 +7,21 @@
   <link rel="stylesheet" href="style.css" />
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>💬</text></svg>" />
 </head>
-<body>
+<body data-view="contacts">
   <header>
     <div class="header-inner">
       <h1>💬 WhatsThat <span id="app-version" class="version"></span></h1>
+      <nav class="tabs" id="tabs">
+        <button type="button" data-view="contacts">Contacts</button>
+        <button type="button" data-view="message">Message</button>
+      </nav>
       <div class="pills">
-        <span id="pill-wa" class="pill">WhatsApp: …</span>
+        <span id="pill-wa" class="pill clickable" title="WhatsApp status — click to open Setup">WhatsApp: …</span>
         <span id="pill-google" class="pill">Google: …</span>
         <span id="pill-mock" class="pill pill-mock hidden">MOCK MODE</span>
+        <button type="button" id="btn-setup" class="icon-btn" title="Setup" aria-label="Setup">
+          <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="8" r="2.4"/><path d="M8 1.4v2M8 12.6v2M1.4 8h2M12.6 8h2M3.3 3.3l1.5 1.5M11.2 11.2l1.5 1.5M12.7 3.3l-1.5 1.5M4.8 11.2l-1.5 1.5"/></svg>
+        </button>
       </div>
     </div>
   </header>
@@ -45,9 +52,8 @@
       </details>
     </section>
 
-    <!-- 3. Contacts -->
+    <!-- Contacts tab -->
     <section class="card" id="card-contacts">
-      <h2><span class="step">3</span> Contacts</h2>
       <div class="row">
         <input type="text" id="sheet-url" placeholder="Paste your Google Sheet URL" />
         <input type="text" id="tab-name" placeholder="Tab name (optional)" size="14" />
@@ -65,9 +71,8 @@
       <div id="contacts-table-wrap"></div>
     </section>
 
-    <!-- 4. Message -->
+    <!-- Message tab -->
     <section class="card" id="card-message">
-      <h2><span class="step">4</span> Message</h2>
       <div id="var-chips" class="chips"></div>
       <div class="ta-wrap">
         <textarea id="template" rows="6" placeholder="Hey {{firstName}}! …"></textarea>
@@ -83,9 +88,8 @@
       </div>
     </section>
 
-    <!-- 5. Send -->
     <section class="card" id="card-send">
-      <h2><span class="step">5</span> Send</h2>
+      <h2>Send</h2>
       <div class="row">
         <button id="btn-test">Send test to me</button>
         <span id="test-status" class="muted"></span>

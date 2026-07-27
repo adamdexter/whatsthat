@@ -49,8 +49,10 @@ npm start --fresh    # same, but start blank instead of restoring last session
 ```
 
 The first launch downloads a private Chromium build (~1 min) used only for
-the WhatsApp connection. Then follow the numbered cards in the UI — they're
-ordered the way you'll use them.
+the WhatsApp connection. The app opens on Setup until WhatsApp is linked,
+then lives in two tabs — **Contacts** (who) and **Message** (what + send) —
+with connection status always visible in the toolbar; the gear (or clicking
+the WhatsApp capsule) reopens Setup anytime.
 
 ## One-time setup
 

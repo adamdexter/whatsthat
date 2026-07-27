@@ -17,6 +17,7 @@ const S = {
   progressCount: 0,
   totalToSend: 0,
   schedule: [],
+  lastTab: 'contacts', // persisted via the draft; Setup is never remembered
 };
 
 const BLANK = '__blank__';
@@ -907,6 +908,7 @@ const saveDraft = debounce(() => {
       contactsCache: S.contactsCache,
       selectedIds: [...S.selected],
       previewId: S.previewId,
+      activeTab: S.lastTab,
     },
   }).catch(() => {});
 }, 600);
@@ -920,6 +922,28 @@ function onTemplateChanged() {
 // Inside the Mac app shell the header doubles as the frameless window's
 // titlebar — the class adds traffic-light inset + drag region.
 if (navigator.userAgent.includes('Electron')) document.body.classList.add('in-app');
+
+// ---------- Views (toolbar tabs + setup) ----------
+// Setup (WhatsApp + Google cards) is not a tab: it opens via the gear / the
+// WhatsApp status capsule, opens itself when the connection needs a human
+// (first run, QR re-link), and steps aside once connected.
+const TAB_VIEWS = ['contacts', 'message'];
+let setupPinned = false; // user opened Setup deliberately — don't auto-leave
+
+function setView(view, { save = true } = {}) {
+  if (!TAB_VIEWS.includes(view) && view !== 'setup') view = 'contacts';
+  document.body.dataset.view = view;
+  if (TAB_VIEWS.includes(view)) S.lastTab = view;
+  document.querySelectorAll('#tabs button').forEach((b) => b.classList.toggle('active', b.dataset.view === view));
+  $('btn-setup').classList.toggle('active', view === 'setup');
+  if (view !== 'setup') setupPinned = false;
+  if (save) saveDraft();
+}
+
+function openSetup(pinned) {
+  setupPinned = pinned;
+  setView('setup', { save: false });
+}
 
 // ---------- Boot ----------
 // What the launch-time auto-updater did (from update.local.json via /api/state).
@@ -972,6 +996,12 @@ async function boot() {
   renderPreviewBubble();
   renderRunButton();
 
+  // Initial view: setup owns the screen until WhatsApp is connected;
+  // otherwise land on the last-used tab.
+  if (TAB_VIEWS.includes(d.activeTab)) S.lastTab = d.activeTab;
+  if (S.wa.status === 'ready') setView(S.lastTab, { save: false });
+  else openSetup(false);
+
   if (S.running) {
     $('run-progress').classList.remove('hidden');
     $('progress-label').textContent = 'Run in progress — new events will appear here.';
@@ -982,9 +1012,16 @@ async function boot() {
   // Live events
   const es = new EventSource('/api/events');
   es.addEventListener('wa_state', (e) => {
+    const prev = S.wa.status;
     S.wa = JSON.parse(e.data);
     renderPills();
     renderWa();
+    // Connection now needs a human (fresh link / re-link) → surface Setup;
+    // connection just established during auto-opened Setup → move along.
+    if (S.wa.status === 'qr' && document.body.dataset.view !== 'setup') openSetup(false);
+    else if (S.wa.status === 'ready' && prev !== 'ready' && document.body.dataset.view === 'setup' && !setupPinned) {
+      setView(S.lastTab, { save: false });
+    }
   });
   es.addEventListener('google_status', (e) => {
     S.google = JSON.parse(e.data);
@@ -1066,6 +1103,12 @@ async function boot() {
   $('btn-run').onclick = showRunConfirm;
   $('btn-schedule').onclick = showScheduleForm;
   $('btn-cancel').onclick = () => api('/api/run/cancel', { method: 'POST' }).catch(() => {});
+
+  document.querySelectorAll('#tabs button').forEach((b) => {
+    b.onclick = () => setView(b.dataset.view);
+  });
+  $('btn-setup').onclick = () => openSetup(true);
+  $('pill-wa').onclick = () => openSetup(true);
 
   renderSchedule();
   // Keep pending countdowns fresh.
