@@ -20,9 +20,11 @@ Sheet. Single user (Adam), ~30–40 recipients, 6–8 campaigns/year.
   v1.5.0 = inverse selection, WhatsApp-markup preview, cancel-button lifecycle;
   v1.5.1 = fix silent no-op sends to LID-migrated chats (repeat test-send bug);
   v1.6.0 = Mac app shell Phase A (Electron window+tray, attach-or-spawn,
-  PORT=0 handshake, WHATSTHAT_PACKAGED, dataDir-based auth path).
+  PORT=0 handshake, WHATSTHAT_PACKAGED, dataDir-based auth path);
+  v1.7.0 = macOS-native design system (frameless window, AppKit-style
+  controls, dark mode).
 
-## Feature map (v1.6.0)
+## Feature map (v1.7.0)
 
 - **Contacts**: Google Sheet (OAuth, read-only scope) or pasted CSV/TSV; row 1
   headers, `phone` column required; E.164 normalization (bare 10-digit → +1).
@@ -60,6 +62,16 @@ Sheet. Single user (Adam), ~30–40 recipients, 6–8 campaigns/year.
   the OAuth redirect are built at listen time), `WHATSTHAT_PACKAGED=1`
   (implies NO_OPEN + NO_AGENT; exposed as `packaged` in `/api/state`),
   `createWhatsApp({ dataDir })` for the auth-session location.
+- **Design system** (v1.7.0, `public/style.css`): macOS-native tokens with
+  full dark mode (`prefers-color-scheme` variables — every new style must
+  work in both), AppKit-style controls (push buttons, custom checkboxes,
+  focus rings, menu-style autocomplete), frosted sticky toolbar that IS the
+  frameless window's titlebar in the shell (`titleBarStyle: 'hidden'`,
+  `body.in-app` set via Electron UA adds traffic-light inset + drag region;
+  `-webkit-app-region` is a no-op in browsers so the same CSS serves both).
+  `WHATSTHAT_THEME=light|dark` forces the shell appearance for testing.
+  Gotcha: `background:` shorthand after/before `background-image:` silently
+  drops layers — use multi-layer `background-image` (bit us on checkboxes).
 
 ## Testing
 
@@ -163,8 +175,9 @@ The 2026-07-22 WA churn produced three live-debugged fixes, all carried in
 `_serialized`→`$1` rename, sent-message alternate-wid lookup, and the
 LID-migrated chat lookup miss that silently no-op'd sends.
 
-Mac-app roadmap (Electron plan approved 2026-07-26; Phase A shipped v1.6.0):
-- **Phase B (v1.7.0)**: electron-builder packaging (engine unpacked from
+Mac-app roadmap (Electron plan approved 2026-07-26; Phase A shipped v1.6.0,
+native design system v1.7.0):
+- **Phase B (v1.8.0)**: electron-builder packaging (engine unpacked from
   asar), data → `~/Library/Application Support/WhatsThat`, first-run
   onboarding (consent screen, Chromium download via `@puppeteer/browsers`
   + existing `WHATSTHAT_CHROME` override, QR, CSV-first contacts),

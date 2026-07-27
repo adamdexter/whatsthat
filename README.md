@@ -200,8 +200,10 @@ read-only Google Sheets API calls.
 npm run app      # WhatsThat in its own window, with a 💬 menu-bar icon
 ```
 
-Same engine, same data — but in a real window instead of a browser tab,
-with WhatsApp status and pending scheduled sends visible from the menu bar.
+Same engine, same data — but in a real, frameless macOS window (traffic
+lights inset into the toolbar, native-style controls, automatic light/dark
+mode) with WhatsApp status and pending scheduled sends visible from the
+menu bar.
 Closing the window keeps the engine (and scheduled sends) running; Cmd+Q
 quits fully. If a terminal-started instance is already running, the app
 attaches to it rather than starting a second one — and leaves it running

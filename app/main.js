@@ -10,7 +10,12 @@
 
 const path = require('path');
 const { spawn } = require('child_process');
-const { app, BrowserWindow, Tray, Menu, dialog, nativeImage } = require('electron');
+const { app, BrowserWindow, Tray, Menu, dialog, nativeImage, nativeTheme } = require('electron');
+
+// Dev/test hook: WHATSTHAT_THEME=light|dark forces the appearance.
+if (process.env.WHATSTHAT_THEME) nativeTheme.themeSource = process.env.WHATSTHAT_THEME;
+
+const windowBg = () => (nativeTheme.shouldUseDarkColors ? '#1e1e20' : '#f2f2f1');
 
 const ROOT = path.join(__dirname, '..');
 const VERSION = require(path.join(ROOT, 'package.json')).version;
@@ -91,6 +96,14 @@ function createWindow() {
     minWidth: 720,
     minHeight: 520,
     title: 'WhatsThat',
+    // Native chrome: frameless with inset traffic lights — the page's
+    // toolbar header is the titlebar (drag region set in CSS).
+    titleBarStyle: 'hidden',
+    trafficLightPosition: { x: 19, y: 18 },
+    backgroundColor: windowBg(),
+  });
+  nativeTheme.on('updated', () => {
+    if (win) win.setBackgroundColor(windowBg());
   });
   win.loadURL(`http://127.0.0.1:${serverPort}`);
   win.on('close', (e) => {

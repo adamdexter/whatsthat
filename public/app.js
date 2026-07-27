@@ -917,6 +917,10 @@ function onTemplateChanged() {
   saveDraft();
 }
 
+// Inside the Mac app shell the header doubles as the frameless window's
+// titlebar — the class adds traffic-light inset + drag region.
+if (navigator.userAgent.includes('Electron')) document.body.classList.add('in-app');
+
 // ---------- Boot ----------
 // What the launch-time auto-updater did (from update.local.json via /api/state).
 function renderBootNotice(u) {
