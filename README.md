@@ -1,5 +1,8 @@
 # WhatsThat 💬
 
+[![CI](https://github.com/adamdexter/whatsthat/actions/workflows/ci.yml/badge.svg)](https://github.com/adamdexter/whatsthat/actions/workflows/ci.yml)
+[![Latest release](https://img.shields.io/github/v/release/adamdexter/whatsthat?include_prereleases&label=release)](https://github.com/adamdexter/whatsthat/releases/latest)
+
 **Personal WhatsApp messages, at the scale of a real personal network — from a Mac app that runs entirely on your machine.**
 
 > **Status: alpha/beta.** It works end-to-end and is in daily use by its author,
@@ -106,6 +109,9 @@ template variable:
 - Bare 10-digit numbers are treated as US (`+1`); international numbers
   need their country code with a leading `+`.
 - A row without a valid phone number is shown but excluded from sending.
+- Want to try it before touching your own list? Paste
+  [`examples/contacts-sample.csv`](examples/contacts-sample.csv) — fictional
+  people on reserved `555` numbers (nobody real can receive anything).
 
 **Google Sheets (optional).** If you'd rather load straight from a private
 Sheet, Setup (gear) → Google walks you through creating OAuth credentials
@@ -230,8 +236,13 @@ npm run dist     # build the .dmg/.zip
 ```
 
 Mock-mode rules: numbers ending `99` are "not on WhatsApp"; numbers ending
-`98` fail on send. `CLAUDE.md` holds the project conventions, architecture
-invariants, and the full change history.
+`98` fail on send (`examples/contacts-sample.csv` includes one of each).
+`CLAUDE.md` holds the project conventions, architecture invariants, and the
+full change history.
+
+CI runs the full test suite on every push and pull request (macOS runner,
+mock mode). Pushing a `v*` tag builds the app on GitHub's runners and
+attaches the `.dmg`/`.zip` to that tag's release.
 
 ## License
 

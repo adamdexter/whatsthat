@@ -1,0 +1,39 @@
+name: Release
+
+# Every v* tag gets a reproducible build attached to its GitHub Release:
+# the .dmg and .zip from `npm run dist` (unsigned — see README). The release
+# is created if it does not exist yet; existing assets are replaced.
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build WhatsThat.app (arm64)
+    runs-on: macos-14
+    timeout-minutes: 40
+    env:
+      PUPPETEER_SKIP_DOWNLOAD: '1'
+      CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm test
+      - run: npm run dist
+      - name: Attach to the GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TAG="${GITHUB_REF_NAME}"
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" dist/*.dmg dist/*-mac.zip --clobber
+          else
+            gh release create "$TAG" dist/*.dmg dist/*-mac.zip --title "WhatsThat $TAG" --generate-notes
+          fi

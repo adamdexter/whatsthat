@@ -47,7 +47,9 @@ Sheet. Single user (Adam), ~30–40 recipients, 6–8 campaigns/year.
   GitHub Release;
   v1.14.0 = "Last sent" column removed (too noisy; `/api/history` +
   `src/history.js` stay for a future export), side-by-side layout toggle
-  for wide windows (`body[data-layout=split]`, persisted as `draft.layout`).
+  for wide windows (`body[data-layout=split]`, persisted as `draft.layout`);
+  v1.15.0 = GitHub Actions (CI tests on push/PR; release build on `v*` tags
+  attaches dmg/zip), `examples/contacts-sample.csv`, README badges.
 
 ## Feature map (v1.14.0)
 
@@ -269,6 +271,15 @@ Sheet. Single user (Adam), ~30–40 recipients, 6–8 campaigns/year.
   devDependency now, used only by `scripts/create-sheet.js`.
 
 ## Testing
+
+- **CI** (`.github/workflows/ci.yml`): `npm ci && npm test` on `macos-14`
+  with `PUPPETEER_SKIP_DOWNLOAD=1` for every push to main and every PR.
+  **Release** (`.github/workflows/release.yml`): a `v*` tag push runs the
+  tests, `npm run dist`, and creates/updates that tag's GitHub Release with
+  the dmg + zip (`gh release upload --clobber` when the release already
+  exists, so a local `gh release create` beforehand is fine). The release
+  flow is therefore: bump + commit + `git tag vX.Y.Z` + `git push origin
+  main --tags` — no local build needed.
 
 - `npm test` — 131 unit + e2e tests (server boots in mock mode; no real
   WhatsApp/Google). e2e uses `WHATSTHAT_TICK_MS=200` for fast scheduler ticks.
