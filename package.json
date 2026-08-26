@@ -21,7 +21,7 @@
     "app": "electron .",
     "icons": "electron scripts/make-icons.js",
     "migrate-data": "node scripts/migrate-data.js",
-    "dist": "CSC_IDENTITY_AUTO_DISCOVERY=false electron-builder --mac --arm64 && node scripts/verify-build.js"
+    "dist": "CSC_IDENTITY_AUTO_DISCOVERY=false electron-builder --mac --arm64 --publish never && node scripts/verify-build.js"
   },
   "dependencies": {
     "@googleapis/sheets": "^14.0.0",
