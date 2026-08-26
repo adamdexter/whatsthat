@@ -10,7 +10,8 @@
 const path = require('path');
 
 const ROOT = path.join(__dirname, '..');
-const DATA_DIR = process.env.WHATSTHAT_DATA_DIR || ROOT;
+const { resolveDataDir, readEngineInfo, pidAlive } = require(path.join(ROOT, 'src', 'datadir'));
+const DATA_DIR = resolveDataDir({ rootDir: ROOT }).dir;
 const PORT = Number(process.env.PORT || 3847);
 const MOCK = process.env.WHATSTHAT_MOCK === '1';
 
@@ -18,16 +19,25 @@ const { createScheduleStore } = require(path.join(ROOT, 'src', 'schedule'));
 
 const log = (msg) => console.log(`[${new Date().toISOString()}] ${msg}`);
 
-async function appIsRunning() {
-  try {
-    const controller = new AbortController();
-    const t = setTimeout(() => controller.abort(), 2000);
-    const res = await fetch(`http://127.0.0.1:${PORT}/api/state`, { signal: controller.signal });
-    clearTimeout(t);
-    return res.ok;
-  } catch {
-    return false;
+// The app normally sits on 3847, but engine.local.json is authoritative
+// (an app that fell back to an ephemeral port still owns the session).
+function candidatePorts() {
+  const info = readEngineInfo(DATA_DIR);
+  const ports = info && pidAlive(info.pid) ? [info.port] : [];
+  ports.push(PORT, 3847);
+  return [...new Set(ports)];
+}
+
+async function findRunningApp() {
+  for (const port of candidatePorts()) {
+    try {
+      const res = await fetch(`http://127.0.0.1:${port}/api/state`, { signal: AbortSignal.timeout(2000) });
+      if (res.ok) return port;
+    } catch {
+      /* nothing on that port */
+    }
   }
+  return null;
 }
 
 async function main() {
@@ -37,10 +47,11 @@ async function main() {
 
   log(`${due.length} due campaign(s)`);
 
-  if (await appIsRunning()) {
+  const appPort = await findRunningApp();
+  if (appPort) {
     // The app owns the WhatsApp session — trigger it and let it send.
-    log('App is running — asking it to send');
-    const res = await fetch(`http://127.0.0.1:${PORT}/api/schedule/run-due`, { method: 'POST' });
+    log(`App is running on port ${appPort} — asking it to send`);
+    const res = await fetch(`http://127.0.0.1:${appPort}/api/schedule/run-due`, { method: 'POST' });
     const data = await res.json().catch(() => ({}));
     log(`App response: ${JSON.stringify(data)}`);
     return;

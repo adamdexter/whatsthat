@@ -42,14 +42,34 @@ broken variable, keep a written report of exactly what happened.
 
 ## Quick start
 
+**As a Mac app** (recommended):
+
 ```bash
 npm install
+npm run dist                                   # builds dist/mac-arm64/WhatsThat.app
+ditto dist/mac-arm64/WhatsThat.app /Applications/
+open -a WhatsThat                              # or double-click it in Applications
+```
+
+It is an unsigned personal build: an app you built on this Mac opens
+normally; one copied from elsewhere gets blocked once — allow it under
+System Settings → Privacy & Security → "Open Anyway" (or
+`xattr -dr com.apple.quarantine /Applications/WhatsThat.app`).
+Coming from an older checkout? `npm run migrate-data` copies your linked
+session, draft, Google token and reports into
+`~/Library/Application Support/WhatsThat` first (copy only — nothing is
+deleted), so the app connects without a new QR scan.
+
+**From the terminal** (same engine, opens in your browser):
+
+```bash
 npm start            # opens http://localhost:3847
 npm start --fresh    # same, but start blank instead of restoring last session
 ```
 
-The first launch downloads a private Chromium build (~1 min) used only for
-the WhatsApp connection. The app opens on Setup until WhatsApp is linked,
+The first launch downloads a private Chrome build (~160 MB, one-time) used
+only for the WhatsApp connection — the app shows a progress bar while it
+does. The app opens on Setup until WhatsApp is linked,
 then lives in two tabs — **Contacts** (who) and **Message** (what + send) —
 with connection status always visible in the toolbar; the gear (or clicking
 the WhatsApp capsule) reopens Setup anytime.
@@ -198,26 +218,24 @@ read-only Google Sheets API calls.
 
 ## Run it as a Mac app
 
-```bash
-npm run app      # WhatsThat in its own window, with a 💬 menu-bar icon
-```
-
-Same engine, same data — but in a real, frameless macOS window (traffic
-lights inset into the toolbar, native-style controls, automatic light/dark
-mode) with WhatsApp status and pending scheduled sends visible from the
-menu bar.
+`WhatsThat.app` (built by `npm run dist`, see Quick start) is the same
+engine in a real, frameless macOS window — traffic lights inset into the
+toolbar, native-style controls, automatic light/dark mode — with WhatsApp
+status and pending scheduled sends visible from the menu-bar icon.
 Closing the window keeps the engine (and scheduled sends) running; Cmd+Q
 quits fully. If a terminal-started instance is already running, the app
 attaches to it rather than starting a second one — and leaves it running
 when you quit.
 
-A double-clickable, installable `WhatsThat.app` (no dev tools needed) is the
-next milestone — see the roadmap in `CLAUDE.md`.
+The app keeps everything in `~/Library/Application Support/WhatsThat` (see
+"Your data"); the library it drives is fixed per build, so updating means
+rebuilding. `npm run app` runs the same shell from the checkout for
+development, against the same data folder.
 
 ## Development
 
 ```bash
-npm test         # 80 unit + end-to-end tests (mock mode; no real sends)
+npm test         # 99 unit + end-to-end tests (mock mode; no real sends)
 npm run mock     # run the app against a fake WhatsApp client
 ```
 

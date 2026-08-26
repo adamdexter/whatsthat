@@ -2,6 +2,7 @@
 
 const path = require('path');
 const QRCode = require('qrcode');
+const { ensureBrowser } = require('./browser');
 
 // NOTE on version pinning: don't. We tried pinning the WA Web build via
 // webVersion/webVersionCache (v1.3.1) — on 2.3000.x builds the page
@@ -11,38 +12,59 @@ const QRCode = require('qrcode');
 // swallowed inside the exposeFunction bridge and 'ready' never fires). The
 // same race happens unpinned whenever WA ships a build mid-launch, so the
 // real defense is the self-healing startup watchdog below.
+// (webVersionCache.path below only relocates the library's html cache — it
+// does not pin anything.)
 
 // Both implementations expose the same interface:
 //   initialize()                 — start connecting (resolves when startup settles)
-//   getState()                   — { status, qrDataUrl, self, error }
+//   getState()                   — { status, qrDataUrl, self, error, browser }
 //   onUpdate(cb)                 — cb(state) on every state change
 //   checkNumber(e164)            — serialized chat id, or null if not on WhatsApp
 //   send(chatId, text)
 //   sendToSelf(text)
 //   logout()
+//   destroy()
+//   browserPid()                 — pid of the Chromium we launched, or null
 // status: 'starting' | 'qr' | 'authenticating' | 'ready' | 'disconnected' | 'error'
+// browser: { status: 'resolving' | 'downloading' | 'ready' | 'error', percent, source, error }
 
-function createRealWhatsApp({ dataDir = path.join(__dirname, '..') } = {}) {
+function createRealWhatsApp({ dataDir = path.join(__dirname, '..'), env = process.env } = {}) {
   const { Client, LocalAuth } = require('whatsapp-web.js');
   const listeners = new Set();
-  const state = { status: 'starting', qrDataUrl: null, self: null, error: null };
-  const emit = () => listeners.forEach((cb) => cb({ ...state }));
+  const state = {
+    status: 'starting',
+    qrDataUrl: null,
+    self: null,
+    error: null,
+    browser: { status: 'resolving', percent: null, source: null, error: null },
+  };
+  const emit = () => listeners.forEach((cb) => cb({ ...state, browser: { ...state.browser } }));
+
+  const authDir = path.join(dataDir, '.wwebjs_auth');
+  const cacheDir = path.join(dataDir, '.wwebjs_cache');
+
+  // Kept as our own reference: the library merges defaults INTO this object
+  // and reads it at launch time, so the executable path resolved in
+  // initialize() lands here (the same way LocalAuth injects userDataDir).
+  const puppeteerOpts = {
+    headless: true,
+    args: ['--no-sandbox', '--disable-setuid-sandbox'],
+    // Signal teardown is owned by whoever created us (server.js signal
+    // handler / run-due.js) via destroy() — not puppeteer's own handler,
+    // which has left orphaned node processes holding the port.
+    handleSIGINT: false,
+    handleSIGTERM: false,
+  };
 
   const client = new Client({
-    // The session lives under dataDir (defaults to the repo root, so running
-    // from any CWD reuses the same session and credentials stay behind the
-    // gitignore; the packaged app passes its Application Support dir).
-    authStrategy: new LocalAuth({ dataPath: path.join(dataDir, '.wwebjs_auth') }),
-    puppeteer: {
-      headless: true,
-      args: ['--no-sandbox', '--disable-setuid-sandbox'],
-      // Signal teardown is owned by whoever created us (server.js signal
-      // handler / run-due.js) via destroy() — not puppeteer's own handler,
-      // which has left orphaned node processes holding the port.
-      handleSIGINT: false,
-      handleSIGTERM: false,
-      ...(process.env.WHATSTHAT_CHROME ? { executablePath: process.env.WHATSTHAT_CHROME } : {}),
-    },
+    // The session lives under dataDir (the repo root in terminal mode, the
+    // Application Support dir for the app) — see src/datadir.js.
+    authStrategy: new LocalAuth({ dataPath: authDir }),
+    puppeteer: puppeteerOpts,
+    // The library's WA Web html cache defaults to ./.wwebjs_cache relative to
+    // process.cwd() and mkdirs it unguarded mid-startup — fatal when cwd is
+    // read-only (a Finder-launched app). Anchor it to the data dir.
+    webVersionCache: { type: 'local', path: cacheDir },
   });
 
   // Self-healing startup watchdog. WhatsApp Web can hot-update and reload
@@ -127,8 +149,38 @@ function createRealWhatsApp({ dataDir = path.join(__dirname, '..') } = {}) {
     emit();
   });
 
+  // Locate (or download) the Chrome build puppeteer expects. Done once, before
+  // the startup watchdog is armed — a 160 MB download must not count as a
+  // stalled start.
+  async function resolveBrowser() {
+    if (puppeteerOpts.executablePath) return;
+    state.browser = { status: 'resolving', percent: null, source: null, error: null };
+    emit();
+    const { executablePath, source } = await ensureBrowser({
+      dataDir,
+      env,
+      log: console.log,
+      onProgress: (percent) => {
+        state.browser = { ...state.browser, status: 'downloading', percent };
+        emit();
+      },
+    });
+    puppeteerOpts.executablePath = executablePath;
+    state.browser = { status: 'ready', percent: null, source, error: null };
+    emit();
+  }
+
   return {
     async initialize() {
+      try {
+        await resolveBrowser();
+      } catch (err) {
+        state.browser = { ...state.browser, status: 'error', error: err.message };
+        state.status = 'error';
+        state.error = `Could not get a browser for WhatsApp Web: ${err.message}`;
+        emit();
+        return;
+      }
       try {
         armStartupWatchdog();
         await client.initialize();
@@ -141,7 +193,7 @@ function createRealWhatsApp({ dataDir = path.join(__dirname, '..') } = {}) {
         emit();
       }
     },
-    getState: () => ({ ...state }),
+    getState: () => ({ ...state, browser: { ...state.browser } }),
     onUpdate: (cb) => listeners.add(cb),
     async checkNumber(e164) {
       const id = await client.getNumberId(e164.replace(/^\+/, ''));
@@ -170,7 +222,15 @@ function createRealWhatsApp({ dataDir = path.join(__dirname, '..') } = {}) {
     async destroy() {
       await client.destroy();
     },
-    _authDir: path.join(dataDir, '.wwebjs_auth'), // introspection for tests
+    browserPid() {
+      try {
+        return client.pupBrowser?.process()?.pid ?? null;
+      } catch {
+        return null;
+      }
+    },
+    _authDir: authDir, // introspection for tests
+    _cacheDir: cacheDir,
   };
 }
 
@@ -180,7 +240,13 @@ function createRealWhatsApp({ dataDir = path.join(__dirname, '..') } = {}) {
 //   number ending in 98 -> send throws
 function createMockWhatsApp() {
   const listeners = new Set();
-  const state = { status: 'starting', qrDataUrl: null, self: null, error: null };
+  const state = {
+    status: 'starting',
+    qrDataUrl: null,
+    self: null,
+    error: null,
+    browser: { status: 'ready', percent: null, source: 'mock', error: null },
+  };
   const emit = () => listeners.forEach((cb) => cb({ ...state }));
   const delay = (ms) => new Promise((r) => setTimeout(r, ms));
   const sent = [];
@@ -221,11 +287,12 @@ function createMockWhatsApp() {
       emit();
     },
     async destroy() {},
+    browserPid: () => null,
   };
 }
 
-function createWhatsApp({ mock = false, dataDir } = {}) {
-  return mock ? createMockWhatsApp() : createRealWhatsApp({ dataDir });
+function createWhatsApp({ mock = false, dataDir, env } = {}) {
+  return mock ? createMockWhatsApp() : createRealWhatsApp({ dataDir, env });
 }
 
 module.exports = { createWhatsApp };

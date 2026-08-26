@@ -56,7 +56,9 @@ function renderPills() {
     disconnected: ['Disconnected', 'err'],
     error: ['Error', 'err'],
   };
-  const [label, cls] = map[S.wa.status] || [S.wa.status, 'warn'];
+  const br = S.wa.browser;
+  const downloading = br && br.status === 'downloading' && S.wa.status !== 'ready';
+  const [label, cls] = downloading ? [`Downloading browser ${Number(br.percent) || 0}%`, 'warn'] : map[S.wa.status] || [S.wa.status, 'warn'];
   waPill.textContent = `WhatsApp: ${label}`;
   waPill.className = `pill ${cls}`;
 
@@ -72,7 +74,14 @@ function renderPills() {
 function renderWa() {
   const el = $('wa-body');
   const st = S.wa;
-  if (st.status === 'qr') {
+  const br = st.browser || {};
+  if (br.status === 'downloading' && st.status !== 'ready') {
+    const pct = Math.max(0, Math.min(100, Number(br.percent) || 0));
+    el.innerHTML = `
+      <div class="status-line"><span class="dot warn"></span> Downloading the browser WhatsApp Web runs in… <b>${pct}%</b>
+        <span class="muted">(one-time, about 160 MB)</span></div>
+      <div class="progress-track"><div class="progress-bar" style="width:${pct}%"></div></div>`;
+  } else if (st.status === 'qr') {
     el.innerHTML = `
       <div class="qr-wrap">
         <img src="${st.qrDataUrl}" alt="WhatsApp QR code" width="280" height="280" />
@@ -947,19 +956,24 @@ function openSetup(pinned) {
 
 // ---------- Boot ----------
 // What the launch-time auto-updater did (from update.local.json via /api/state).
-function renderBootNotice(u) {
+function renderBootNotice(state) {
   const el = $('boot-notice');
+  const u = state.update || {};
+  const m = state.migration;
+  const parts = [];
   if (u.updated) {
-    el.innerHTML = `<div class="notice">⬆️ whatsapp-web.js auto-updated <b>v${esc(u.previous)} → v${esc(u.installed)}</b> at launch.${
+    parts.push(`<div class="notice">⬆️ whatsapp-web.js auto-updated <b>v${esc(u.previous)} → v${esc(u.installed)}</b> at launch.${
       u.patchRetired ? ' The local compatibility patch was retired — if sends start failing, see CLAUDE.md → auto-update recovery.' : ''
-    }</div>`;
-    el.classList.remove('hidden');
+    }</div>`);
   } else if (u.error) {
-    el.innerHTML = `<div class="notice">Auto-update check failed at launch (${esc(u.error)}) — running whatsapp-web.js v${esc(u.installed || '?')}.</div>`;
-    el.classList.remove('hidden');
-  } else {
-    el.classList.add('hidden');
+    parts.push(`<div class="notice">Auto-update check failed at launch (${esc(u.error)}) — running whatsapp-web.js v${esc(u.installed || '?')}.</div>`);
   }
+  // A pinned engine (packaged app) has nothing to announce.
+  if (m && m.migrated && m.to) {
+    parts.push(`<div class="notice">📦 Your data now lives in <b>${esc(m.to)}</b> — moved from ${esc(m.from)}; the old copies were left in place.</div>`);
+  }
+  el.innerHTML = parts.join('');
+  el.classList.toggle('hidden', parts.length === 0);
 }
 
 async function boot() {
@@ -988,7 +1002,7 @@ async function boot() {
     });
   }
 
-  renderBootNotice(state.update || {});
+  renderBootNotice(state);
   renderPills();
   renderWa();
   renderGoogle();

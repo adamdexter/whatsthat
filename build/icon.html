@@ -1,0 +1,90 @@
+<!doctype html>
+<!-- Icon source for scripts/make-icons.js: drawn on a canvas so every size
+     is rendered crisply rather than downscaled. A speech bubble (the same
+     motif as the 💬 favicon) on a macOS Big Sur-style rounded tile. -->
+<meta charset="utf-8" />
+<body style="margin:0;background:transparent">
+<script>
+  function roundRect(ctx, x, y, w, h, r) {
+    ctx.beginPath();
+    ctx.moveTo(x + r, y);
+    ctx.arcTo(x + w, y, x + w, y + h, r);
+    ctx.arcTo(x + w, y + h, x, y + h, r);
+    ctx.arcTo(x, y + h, x, y, r);
+    ctx.arcTo(x, y, x + w, y, r);
+    ctx.closePath();
+  }
+
+  // Speech bubble centred at (cx, cy), width w, height h, tail bottom-left.
+  function bubblePath(ctx, cx, cy, w, h) {
+    const x = cx - w / 2;
+    const y = cy - h / 2;
+    const r = h * 0.34;
+    ctx.beginPath();
+    ctx.moveTo(x + r, y);
+    ctx.arcTo(x + w, y, x + w, y + h, r);
+    ctx.arcTo(x + w, y + h, x, y + h, r);
+    // tail
+    ctx.lineTo(x + w * 0.36, y + h);
+    ctx.lineTo(x + w * 0.16, y + h * 1.28);
+    ctx.lineTo(x + w * 0.2, y + h);
+    ctx.arcTo(x, y + h, x, y, r);
+    ctx.arcTo(x, y, x + w, y, r);
+    ctx.closePath();
+  }
+
+  function renderIcon(size) {
+    const c = document.createElement('canvas');
+    c.width = c.height = size;
+    const ctx = c.getContext('2d');
+    const tile = (size * 824) / 1024;
+    const off = (size - tile) / 2;
+    const radius = tile * 0.2237;
+    const g = ctx.createLinearGradient(0, off, 0, off + tile);
+    g.addColorStop(0, '#34d17a');
+    g.addColorStop(1, '#0f8f5a');
+    roundRect(ctx, off, off, tile, tile, radius);
+    ctx.fillStyle = g;
+    ctx.fill();
+    // soft top highlight
+    const hl = ctx.createLinearGradient(0, off, 0, off + tile * 0.5);
+    hl.addColorStop(0, 'rgba(255,255,255,0.18)');
+    hl.addColorStop(1, 'rgba(255,255,255,0)');
+    roundRect(ctx, off, off, tile, tile, radius);
+    ctx.fillStyle = hl;
+    ctx.fill();
+    // bubble
+    bubblePath(ctx, size / 2, size / 2 - tile * 0.05, tile * 0.6, tile * 0.44);
+    ctx.fillStyle = '#ffffff';
+    ctx.fill();
+    // three dots
+    const dotR = tile * 0.04;
+    ctx.fillStyle = '#1a9b62';
+    for (const dx of [-0.16, 0, 0.16]) {
+      ctx.beginPath();
+      ctx.arc(size / 2 + tile * dx, size / 2 - tile * 0.05, dotR, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    return c.toDataURL('image/png');
+  }
+
+  // Menu-bar template image: black + alpha only, macOS tints it.
+  function renderTray(size) {
+    const c = document.createElement('canvas');
+    c.width = c.height = size;
+    const ctx = c.getContext('2d');
+    const pad = size * 0.08;
+    bubblePath(ctx, size / 2, size / 2 - size * 0.08, size - pad * 2, (size - pad * 2) * 0.72);
+    ctx.fillStyle = '#000000';
+    ctx.fill();
+    ctx.globalCompositeOperation = 'destination-out';
+    const dotR = size * 0.075;
+    for (const dx of [-0.24, 0, 0.24]) {
+      ctx.beginPath();
+      ctx.arc(size / 2 + (size - pad * 2) * dx, size / 2 - size * 0.08, dotR, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    return c.toDataURL('image/png');
+  }
+</script>
+</body>

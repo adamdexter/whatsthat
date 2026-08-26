@@ -13,6 +13,8 @@ const { render } = require('./src/template');
 const { createRunner } = require('./src/runner');
 const { createWhatsApp } = require('./src/whatsapp');
 const { createScheduleStore, isAgentInstalled, installAgent } = require('./src/schedule');
+const { resolveDataDir, migrateData, readEngineInfo, writeEngineInfo, updateEngineInfo, removeEngineInfo, pidAlive } = require('./src/datadir');
+const { expectedBuildId } = require('./src/browser');
 
 const VERSION = require('./package.json').version;
 // PORT=0 asks the OS for an ephemeral port (the app shell does this in
@@ -24,8 +26,40 @@ const MOCK = process.env.WHATSTHAT_MOCK === '1';
 const PACKAGED = process.env.WHATSTHAT_PACKAGED === '1';
 const NO_OPEN = process.env.WHATSTHAT_NO_OPEN === '1' || PACKAGED;
 const ROOT = __dirname;
-const DATA_DIR = process.env.WHATSTHAT_DATA_DIR || ROOT; // overridable for tests
+// Repo root in terminal mode, ~/Library/Application Support/WhatsThat for the
+// app (and for terminal mode once a session lives there) — src/datadir.js.
+const { dir: DATA_DIR, source: DATA_DIR_SOURCE } = resolveDataDir({ rootDir: ROOT });
 const REPORTS_DIR = path.join(DATA_DIR, 'reports');
+console.log(`Data directory: ${DATA_DIR} (${DATA_DIR_SOURCE})`);
+
+// One-time move of an older checkout's data (session, draft, tokens, reports)
+// into the new home: copy + verify, never delete, no-op once the marker
+// exists. WHATSTHAT_MIGRATE_FROM is set by the dev app shell and by
+// `npm run migrate-data`.
+let migration = null;
+if (process.env.WHATSTHAT_MIGRATE_FROM) {
+  try {
+    const result = migrateData({ from: process.env.WHATSTHAT_MIGRATE_FROM, to: DATA_DIR, log: console.log });
+    if (result.migrated) migration = result;
+  } catch (err) {
+    console.error(`Data migration skipped: ${err.message}`);
+  }
+}
+
+// What this build drives. In the packaged app the engine is pinned per
+// release (no launch-time npm update), so the UI's update banner reports it
+// as such instead of reading a possibly-migrated update.local.json.
+const ENGINE_INFO = (() => {
+  let whatsappWebJs = null;
+  let chromeBuild = null;
+  try {
+    whatsappWebJs = require('whatsapp-web.js/package.json').version;
+    chromeBuild = expectedBuildId();
+  } catch {
+    /* library missing — surfaced by the WhatsApp client itself */
+  }
+  return { whatsappWebJs, chromeBuild };
+})();
 
 const NO_AGENT = process.env.WHATSTHAT_NO_AGENT === '1' || MOCK || PACKAGED; // tests/mock/app skip launchctl
 
@@ -91,6 +125,11 @@ app.get('/api/events', (req, res) => {
 });
 
 wa.onUpdate((state) => broadcast('wa_state', state));
+// Record the browser we launched so the shell can reap it if the engine
+// ever has to be force-killed.
+wa.onUpdate((state) => {
+  if (state.status === 'ready') updateEngineInfo(DATA_DIR, { chromePid: wa.browserPid?.() ?? null });
+});
 
 // ---------- App state ----------
 let lastRun = null; // most recent run_done event, for UI recovery after an SSE drop
@@ -107,7 +146,16 @@ app.get('/api/state', (req, res) => {
     lastRun,
     schedule: scheduleStore.list(),
     agentInstalled: NO_AGENT ? true : isAgentInstalled(),
-    update: updateStore.read(),
+    update: PACKAGED ? { installed: ENGINE_INFO.whatsappWebJs, pinned: true } : updateStore.read(),
+    engine: ENGINE_INFO,
+    dataDir: DATA_DIR,
+    paths: {
+      dataDir: DATA_DIR,
+      reportsDir: REPORTS_DIR,
+      authDir: path.join(DATA_DIR, '.wwebjs_auth'),
+      logDir: path.join(DATA_DIR, 'logs'),
+    },
+    migration,
   });
 });
 
@@ -255,7 +303,7 @@ app.post('/api/schedule', (req, res) => {
   let agent = { installed: true };
   if (!NO_AGENT) {
     try {
-      agent = isAgentInstalled() ? { installed: true } : installAgent({ rootDir: ROOT });
+      agent = isAgentInstalled() ? { installed: true } : installAgent({ rootDir: ROOT, dataDir: DATA_DIR });
     } catch (err) {
       agent = { installed: false, error: `Background agent install failed: ${err.message}` };
     }
@@ -347,7 +395,7 @@ if (MOCK) {
 // use the session, and the port is the instance lock. A second launch exits
 // here with a pointer to the running (or hung) instance instead of silently
 // booting an invisible WhatsApp client with no UI.
-const httpServer = app.listen(PORT, '127.0.0.1', () => {
+const httpServer = app.listen(PORT, '127.0.0.1', async () => {
   // On EADDRINUSE the listen callback can still fire (via express's once
   // wrapper on the error path) with address() null — that path belongs to
   // the 'error' handler below.
@@ -360,6 +408,36 @@ const httpServer = app.listen(PORT, '127.0.0.1', () => {
     store: googleStore,
     redirectUri: `http://localhost:${actualPort}/api/google/callback`,
   });
+
+  // Cross-port instance lock. A fixed port is its own lock, but an engine on
+  // an ephemeral port sharing this data dir would boot a second WhatsApp
+  // client against the same session. engine.local.json names the current
+  // occupant; if it is alive and answering, we bow out.
+  const other = readEngineInfo(DATA_DIR);
+  if (other && other.pid !== process.pid && other.port !== actualPort && pidAlive(other.pid)) {
+    let answering = false;
+    try {
+      answering = (await fetch(`http://127.0.0.1:${other.port}/api/state`, { signal: AbortSignal.timeout(2000) })).ok;
+    } catch {
+      /* stale file — the pid is something else now */
+    }
+    if (answering) {
+      console.error(
+        `\n✗ WhatsThat v${other.version} is already running on this data directory (pid ${other.pid}, port ${other.port}). Use that instance, or quit it first.\n`
+      );
+      httpServer.close();
+      process.exit(1);
+    }
+  }
+  writeEngineInfo(DATA_DIR, {
+    pid: process.pid,
+    port: actualPort,
+    version: VERSION,
+    startedAt: new Date().toISOString(),
+    packaged: PACKAGED,
+    mock: MOCK,
+  });
+
   // Machine-readable handshake — the Mac app shell parses this line.
   console.log(`whatsthat-listening ${actualPort}`);
   const url = `http://localhost:${actualPort}`;
@@ -393,6 +471,7 @@ httpServer.on('error', async (err) => {
 // Ctrl+C / SIGTERM. Left to default handling, the browser's own signal hooks
 // have raced node's exit and left orphaned servers squatting on the port.
 let shuttingDown = false;
+process.on('exit', () => removeEngineInfo(DATA_DIR)); // only if it is ours (pid match)
 for (const sig of ['SIGINT', 'SIGTERM']) {
   process.on(sig, async () => {
     if (shuttingDown) process.exit(130);

@@ -125,12 +125,12 @@ function stableNodePath() {
   return process.execPath;
 }
 
-function installAgent({ rootDir }) {
+function installAgent({ rootDir, dataDir = rootDir }) {
   const { plist } = agentPaths();
   const xml = agentPlistXml({
     nodePath: stableNodePath(),
     scriptPath: path.join(rootDir, 'scripts', 'run-due.js'),
-    logPath: path.join(rootDir, 'scheduler.log'),
+    logPath: path.join(dataDir, 'scheduler.log'),
   });
   fs.mkdirSync(path.dirname(plist), { recursive: true });
   fs.writeFileSync(plist, xml);

@@ -24,9 +24,13 @@ Sheet. Single user (Adam), ~30–40 recipients, 6–8 campaigns/year.
   v1.7.0 = macOS-native design system (frameless window, AppKit-style
   controls, dark mode);
   v1.8.0 = tabbed layout (Contacts / Message segmented control; Setup via
-  gear + clickable WhatsApp capsule, auto-opens when link needed).
+  gear + clickable WhatsApp capsule, auto-opens when link needed);
+  v1.9.0 = WhatsThat.app (electron-builder, unsigned, asar off), data dir in
+  ~/Library/Application Support/WhatsThat + one-time migration, Chromium via
+  @puppeteer/browsers, engine pinned in the app, `engine.local.json`
+  occupancy file, app + tray icons.
 
-## Feature map (v1.8.0)
+## Feature map (v1.9.0)
 
 - **Contacts**: Google Sheet (OAuth, read-only scope) or pasted CSV/TSV; row 1
   headers, `phone` column required; E.164 normalization (bare 10-digit → +1).
@@ -81,11 +85,69 @@ Sheet. Single user (Adam), ~30–40 recipients, 6–8 campaigns/year.
   `WHATSTHAT_THEME=light|dark` forces the shell appearance for testing.
   Gotcha: `background:` shorthand after/before `background-image:` silently
   drops layers — use multi-layer `background-image` (bit us on checkboxes).
+- **Packaged app** (v1.9.0, `npm run dist` → `dist/mac-arm64/WhatsThat.app`
+  + zip): electron-builder with **`asar: false`** (launchd must exec
+  `scripts/run-due.js` by path; puppeteer/wwebjs do plain fs work) and an
+  explicit `files` allowlist (the repo root holds the WhatsApp session and
+  OAuth token — a default glob would bundle them). `scripts/verify-build.js`
+  proves both directions after every build (engine deps + patch marker
+  present; sessions/tokens/reports/tests/electron absent; bundle id
+  `net.whatsthat.app`; ad-hoc signature). Packaged shell spawns `server.js`
+  directly with `WHATSTHAT_PACKAGED=1` (no `launch.js`, so no auto-update:
+  engine pinned per release, `/api/state.update = {installed, pinned:true}`)
+  and `cwd: DATA_DIR`. Port policy: attach to a WhatsThat on 3847, else
+  spawn on 3847 (stable OAuth redirect), `PORT=0` only if a non-WhatsThat
+  squatter holds it. Icons: `build/icon.html` (canvas drawing) → `npm run
+  icons` (Electron offscreen) → `build/icon.icns` + `app/assets/icon.png`
+  (dev Dock) + `app/assets/trayTemplate{,@2x}.png`. Unsigned: a locally
+  built app never gets the quarantine xattr; a transferred zip needs
+  Privacy & Security → "Open Anyway" on Sequoia (right-click → Open no
+  longer bypasses Gatekeeper).
+- **Data dir** (`src/datadir.js` `resolveDataDir`): `WHATSTHAT_DATA_DIR` →
+  `~/Library/Application Support/WhatsThat` when packaged → same dir when it
+  already holds `.wwebjs_auth/session` (terminal mode follows the app: one
+  session, one dir) → repo root. Everything data-like derives from it
+  (`reports/`, `scheduler.log`, `.wwebjs_cache`, `chromium/`, `logs/`);
+  `/api/state.paths` lists them. **Migration** (`migrateData`, run by
+  `npm run migrate-data` or on boot via `WHATSTHAT_MIGRATE_FROM`, which the
+  dev shell passes): copy + size-verify into a `.migrating` staging dir,
+  atomic rename, skips Chromium lock files / `.wwebjs_cache` /
+  `google-setup.local.json`, never overwrites, never deletes, refuses when
+  the source session's `SingletonLock` pid is alive or a campaign is
+  running; `.migrated-from.json` marker makes it a one-time no-op.
+  `engine.local.json` (0600) names the occupant `{pid, port, version,
+  chromePid…}`: shell attach for ephemeral ports, `run-due.js` port
+  discovery, and a cross-port instance lock in the listen callback (an
+  engine that finds a live, answering occupant on another port exits 1).
+  The shell keeps its own Chromium profile under `<DATA_DIR>/shell`
+  (`app.setPath('userData')` before the single-instance lock).
+- **Chromium** (`src/browser.js` `ensureBrowser`, called inside
+  `wa.initialize()` before the startup watchdog is armed): `WHATSTHAT_CHROME`
+  (missing path ⇒ error, never a silent fall-through) → `<DATA_DIR>/chromium`
+  → `~/.cache/puppeteer` (`PUPPETEER_CACHE_DIR`) → download via
+  `@puppeteer/browsers` `install()` (~160 MB, 338 MB unpacked). Build id =
+  `puppeteer-core`'s `PUPPETEER_REVISIONS.chrome`, so it always matches the
+  library. Progress rides `wa.browser {status, percent, source}` on the
+  normal `wa_state` SSE; the UI shows a bar, the tray a percentage. Chromium
+  is never bundled in the app.
 
 ## Testing
 
-- `npm test` — 80 unit + e2e tests (server boots in mock mode; no real
+- `npm test` — 99 unit + e2e tests (server boots in mock mode; no real
   WhatsApp/Google). e2e uses `WHATSTHAT_TICK_MS=200` for fast scheduler ticks.
+- Packaged app: `npm run dist` (verify-build runs automatically), then a mock
+  smoke by running the binary directly — `open -a` drops env:
+  `WHATSTHAT_MOCK=1 WHATSTHAT_DATA_DIR=$(mktemp -d) PORT=3852
+  dist/mac-arm64/WhatsThat.app/Contents/MacOS/WhatsThat` → window + tray,
+  `engine.local.json` in the data dir with `packaged:true`, engine cwd =
+  data dir (`lsof -p <pid>`), `update.pinned`; quit via `osascript -e 'quit
+  app "WhatsThat"'` → no `WhatsThat.app` processes, port freed, occupancy
+  file gone. Install with `ditto dist/mac-arm64/WhatsThat.app /Applications/`.
+  Download-path check without touching real data: `WHATSTHAT_DATA_DIR=$(mktemp
+  -d) PUPPETEER_CACHE_DIR=/nonexistent PORT=3855 node server.js` → log shows
+  "Downloading Chrome…", `wa.browser.source: 'downloaded'`, reaches `qr`.
+- Note the engine's stdout is invisible for a Finder-launched app until the
+  v1.11.0 log file lands — for now redirect the binary's output when testing.
 - App shell smoke (manual, mock): `PORT=3852 WHATSTHAT_MOCK=1
   WHATSTHAT_DATA_DIR=<tmp> npm run app` → window + tray appear, UI works;
   quit via `osascript -e 'quit app "Electron"'` and assert zero surviving
@@ -107,12 +169,13 @@ Sheet. Single user (Adam), ~30–40 recipients, 6–8 campaigns/year.
   must be revealed with `.open = true` first). Check for stale servers with
   `lsof -nP -iTCP:<port> -sTCP:LISTEN` (the `-ti :p1,:p2` form silently
   matches nothing).
-- **Live-verified** (2026-07-22): QR link, session restore, connect→ready,
-  and repeated test-send-to-self on the user's real account.
-- **Never yet done on live**: a full campaign run to real contacts, a real
-  scheduled send, and the auto-updater actually installing a newer release
-  (that path has only run against fakes — first exercised whenever upstream
-  ships a release newer than 1.34.7).
+- **Live-verified**: QR link, session restore, connect→ready, repeated
+  test-send-to-self (2026-07-22); a full campaign to real contacts and a
+  launchd-driven scheduled send with the app closed (before 2026-08-25); the
+  packaged app end-to-end incl. migration and test-send (2026-08-25).
+- **Never yet done on live**: the auto-updater actually installing a newer
+  release (only run against fakes — first exercised whenever upstream ships
+  a release newer than 1.34.7; terminal mode only, the app is pinned).
 
 ## Local data (all gitignored, never commit)
 
@@ -127,6 +190,15 @@ Sheet. Single user (Adam), ~30–40 recipients, 6–8 campaigns/year.
 | `update.local.json` | What the launch-time auto-updater did last |
 | `patches-retired/` | Patches the auto-updater retired on a version change |
 | `scheduler.log` | launchd runner output |
+| `engine.local.json` | Occupant of this data dir: pid, port, version, chromePid (0600; removed on clean exit) |
+| `.migrated-from.json` | Marker written by the one-time data migration (what was copied, from where) |
+| `chromium/` | Chrome for Testing downloaded by `src/browser.js` when no cache copy exists |
+| `shell/` | The Electron shell's own profile (window cache/cookies) — never the engine's |
+
+Two homes: the repo root (terminal mode, historically) and
+`~/Library/Application Support/WhatsThat` (the app, and terminal mode once a
+session lives there — see `resolveDataDir`). The user's data was migrated
+2026-08-25; the repo copies are stale backups.
 
 ## Architecture invariants
 
@@ -154,6 +226,20 @@ Sheet. Single user (Adam), ~30–40 recipients, 6–8 campaigns/year.
   .connect to the running client's DevTools port (chrome arg
   `--remote-debugging-port=0`, find via `lsof -p <chrome pid>`) and probe
   `window.WWebJS` / `window.Debug.VERSION` read-only.
+- **All data paths derive from `DATA_DIR`** — never `ROOT` or `process.cwd()`.
+  Two bugs taught this: whatsapp-web.js's `LocalWebCache` writes
+  `./.wwebjs_cache` relative to cwd with an unguarded `mkdirSync` mid-startup
+  (fatal when a Finder-launched app has cwd `/` — fixed by
+  `webVersionCache.path` + spawning the engine with `cwd: DATA_DIR`), and
+  `scheduler.log` was rootDir-based.
+- **Never bundle Chromium**; `WHATSTHAT_CHROME` always wins when set (and a
+  wrong path is an error). `@puppeteer/browsers` is pinned exactly to what
+  puppeteer-core pins — bump them together when whatsapp-web.js moves.
+- **Packaged mode pins the engine**: `scripts/launch.js`/`src/update.js` are
+  not even in the bundle; fixes reach the app only via a new build. Never
+  set Electron's `runAsNode: false` fuse — the engine spawn depends on
+  `ELECTRON_RUN_AS_NODE`. Keep `build.files` an allowlist and let
+  `scripts/verify-build.js` prove nothing private shipped.
 - **One instance per port, enforced**: the WhatsApp client starts only after
   `app.listen` succeeds — a second launch exits with a pointer to the running
   instance (never boots an invisible client). SIGINT/SIGTERM destroy the
@@ -175,39 +261,48 @@ Sheet. Single user (Adam), ~30–40 recipients, 6–8 campaigns/year.
   back from `patches-retired/` to `patches/` and
   `npm install whatsapp-web.js@<previous>` (version in `update.local.json`).
 
-## Status & outstanding (as of 2026-07-22, v1.5.1)
+## Status & outstanding (as of 2026-08-25, v1.9.0)
 
-Working end-to-end on the user's live account: link, connect (with
-self-healing against WA Web's mid-launch build swaps), repeated test-sends.
-The 2026-07-22 WA churn produced three live-debugged fixes, all carried in
-`patches/whatsapp-web.js+1.34.7.patch` (details in invariants below):
-`_serialized`→`$1` rename, sent-message alternate-wid lookup, and the
-LID-migrated chat lookup miss that silently no-op'd sends.
+**Live-proven**: link, connect (self-healing against WA Web's mid-launch
+build swaps), repeated test-sends, a **full campaign run to real contacts**,
+and a **real scheduled send fired by launchd with the app closed** (both
+confirmed by the user 2026-08-25). The ship gate is satisfied. v1.9.0's
+packaged `WhatsThat.app` was verified live the same day: Finder launch,
+session restored from Application Support without a QR, test-send-to-self,
+clean quit (no Chrome/engine survivors, lock + occupancy file removed), and
+the Chromium download path against a blank data dir.
 
 Mac-app roadmap (Electron plan approved 2026-07-26; Phase A shipped v1.6.0,
-native design system v1.7.0):
-- **Phase B (v1.9.0)**: electron-builder packaging (engine unpacked from
-  asar), data → `~/Library/Application Support/WhatsThat`, first-run
-  onboarding (consent screen, Chromium download via `@puppeteer/browsers`
-  + existing `WHATSTHAT_CHROME` override, QR, CSV-first contacts),
-  app-resident scheduling replaces launchd in packaged mode, API token
-  hardening. Packaged mode pins the engine per release — no live npm
-  updates on user machines.
+native design system v1.7.0, **Phase B split into three increments**):
+- **v1.9.0 (shipped)**: electron-builder packaging, data in Application
+  Support + one-time migration, Chromium via @puppeteer/browsers, engine
+  pinned per release, app icon. Unsigned personal build.
+- **v1.10.0 (next)**: resident-scheduling resilience — WhatsApp auto-reconnect
+  with backoff + liveness probe (wwebjs emits nothing when Chromium dies),
+  scheduler "waiting for WhatsApp" hold + nudges, launchd fallback pointing at
+  the .app's own binary with self-repairing plist (`NO_AGENT` stops implying
+  from `PACKAGED`), shell engine auto-respawn, login item (hidden/menu-bar
+  launch), quit guard when sends are pending, macOS notifications, richer
+  tray. Decisions already made: `takeoverOnConflict: true` (app reclaims the
+  session 15 s after web.whatsapp.com is opened elsewhere).
+- **v1.11.0**: API hardening (Host check, token cookie/header, OAuth `state`
+  nonce, `/api/ping`), engine log file, CSV-first contacts, in-app draft
+  reset, reports reveal, `googleapis` → `@googleapis/sheets` (−200 MB),
+  README/CLAUDE.md restructure. No consent screen (deferred to Phase C).
 - **Phase C (v2.0.0)**: signing/notarization (needs Adam's Apple Developer
-  ID — his call), electron-updater + public GitHub Releases as the
-  fix-delivery channel, .icns icon, LICENSE.
-- Ship gate: no distribution before a full live campaign has succeeded.
+  ID — his call), electron-updater + public GitHub Releases, LICENSE.
 
 Outstanding / watchlist:
-- **First full live campaign run** (and first real scheduled send) still
-  pending — everything up to that boundary is verified.
 - **Upstream release watch**: when whatsapp-web.js ships > 1.34.7, the
-  auto-updater installs it and retires our patch to `patches-retired/`. If
-  sends then break, follow "Auto-update recovery" below. Track the LID/PN
-  work upstream (PRs #201839/#201850/#201853, issues #201849/#201857).
-- **Auto-updater's real-install path** has only run against fakes; its first
-  real execution deserves a glance at the boot log and banner.
+  terminal-mode auto-updater installs it and retires our patch to
+  `patches-retired/`. If sends then break, follow "Auto-update recovery"
+  above. The packaged app is unaffected until rebuilt (engine pinned). Track
+  the LID/PN work upstream (PRs #201839/#201850/#201853, issues #201849/#201857).
+- **Auto-updater's real-install path** has only run against fakes.
 - **Watchdog relaunch** (v1.4.0) has never fired against a real wedge.
+- The repo checkout still holds the pre-migration copies of `.wwebjs_auth/`,
+  `draft.local.json`, `google.local.json`, `reports/` (left in place by
+  design). Safe to delete once the user is happy with the app.
 - Never clarified: the user once asked for autocomplete "as well as a…" —
   the second half never arrived; ask if it comes up.
 - Deferred idea: import contacts from the Google Workspace Directory

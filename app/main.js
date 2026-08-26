@@ -1,16 +1,22 @@
 'use strict';
 
-// WhatsThat Mac app shell (Phase A — see plans/CLAUDE.md).
-// Owns a window + tray around the existing engine: attaches to an
-// already-running instance on the default port, otherwise spawns
-// scripts/launch.js (keeping the dev-mode npm auto-update) using Electron's
+// WhatsThat Mac app shell — window + tray around the engine (server.js).
+//
+// Attaches to an already-running engine on the default port when one answers
+// /api/state (a terminal `npm start`), otherwise spawns one using Electron's
 // own binary as node (ELECTRON_RUN_AS_NODE — no separate runtime needed).
+// Packaged (app.isPackaged): runs server.js directly with the engine pinned
+// to this release and data in ~/Library/Application Support/WhatsThat.
+// Dev (`npm run app`): runs scripts/launch.js (keeps the npm auto-update)
+// against the same data dir, migrating the repo's data there once.
 // Quit tears the child down via SIGTERM; the engine's v1.4.0 handler makes
 // that clean.
 
 const path = require('path');
+const fs = require('fs');
+const net = require('net');
 const { spawn } = require('child_process');
-const { app, BrowserWindow, Tray, Menu, dialog, nativeImage, nativeTheme } = require('electron');
+const { app, BrowserWindow, Tray, Menu, dialog, nativeImage, nativeTheme, shell } = require('electron');
 
 // Dev/test hook: WHATSTHAT_THEME=light|dark forces the appearance.
 if (process.env.WHATSTHAT_THEME) nativeTheme.themeSource = process.env.WHATSTHAT_THEME;
@@ -19,8 +25,22 @@ const windowBg = () => (nativeTheme.shouldUseDarkColors ? '#1e1e20' : '#f2f2f1')
 
 const ROOT = path.join(__dirname, '..');
 const VERSION = require(path.join(ROOT, 'package.json')).version;
+const PACKAGED = app.isPackaged;
 const DEFAULT_PORT = Number(process.env.PORT || 3847);
 const HANDSHAKE_TIMEOUT_MS = 120000; // launch-time npm update check can be slow
+
+// Data dir: explicit override, else Application Support. Named explicitly —
+// Electron's default userData uses the package name (`whatsthat`) which on
+// case-insensitive APFS would alias the same folder under another spelling.
+const DATA_DIR_OVERRIDDEN = Boolean(process.env.WHATSTHAT_DATA_DIR);
+const DATA_DIR = process.env.WHATSTHAT_DATA_DIR || path.join(app.getPath('appData'), 'WhatsThat');
+// The shell's own Chromium profile (window cache, cookies, prefs) lives in a
+// subfolder so it never mixes with the engine's files. Must precede the
+// single-instance lock, which is kept in userData.
+app.setPath('userData', path.join(DATA_DIR, 'shell'));
+app.setPath('sessionData', path.join(DATA_DIR, 'shell'));
+
+const { readEngineInfo, pidAlive } = require(path.join(ROOT, 'src', 'datadir'));
 
 let serverChild = null; // set only when WE spawned the engine
 let serverPort = null;
@@ -41,15 +61,42 @@ async function probeExisting(port) {
   }
 }
 
-function spawnEngine() {
+// A running engine to attach to: the default port first, then whatever
+// engine.local.json says is serving our data dir (an ephemeral-port fallback).
+async function findExisting() {
+  if (await probeExisting(DEFAULT_PORT)) return DEFAULT_PORT;
+  const info = readEngineInfo(DATA_DIR);
+  if (info && info.port !== DEFAULT_PORT && pidAlive(info.pid) && (await probeExisting(info.port))) return info.port;
+  return null;
+}
+
+const portFree = (port) =>
+  new Promise((resolve) => {
+    const probe = net.createServer();
+    probe.once('error', () => resolve(false));
+    probe.listen(port, '127.0.0.1', () => probe.close(() => resolve(true)));
+  });
+
+function spawnEngine(port) {
   return new Promise((resolve, reject) => {
-    const child = spawn(process.execPath, [path.join(ROOT, 'scripts', 'launch.js')], {
-      cwd: ROOT,
+    fs.mkdirSync(DATA_DIR, { recursive: true });
+    const script = PACKAGED ? path.join(ROOT, 'server.js') : path.join(ROOT, 'scripts', 'launch.js');
+    const child = spawn(process.execPath, [script], {
+      cwd: DATA_DIR, // the engine's library writes cwd-relative caches
       env: {
         ...process.env,
         ELECTRON_RUN_AS_NODE: '1',
         WHATSTHAT_NO_OPEN: '1', // the shell owns the window
-        PORT: String(DEFAULT_PORT),
+        WHATSTHAT_DATA_DIR: DATA_DIR,
+        PORT: String(port),
+        ...(PACKAGED
+          ? { WHATSTHAT_PACKAGED: '1' }
+          : // Dev shell: move the checkout's data into Application Support
+            // once (copy + verify, never deletes) — unless a test pointed us
+            // at a scratch dir.
+            DATA_DIR_OVERRIDDEN
+            ? {}
+            : { WHATSTHAT_MIGRATE_FROM: ROOT }),
       },
       stdio: ['ignore', 'pipe', 'pipe'],
     });
@@ -105,6 +152,13 @@ function createWindow() {
   nativeTheme.on('updated', () => {
     if (win) win.setBackgroundColor(windowBg());
   });
+  // Google refuses OAuth inside an embedded browser, and nothing else the
+  // page opens belongs in a second Electron window: hand every window.open
+  // to the default browser (the OAuth callback still lands on our port).
+  win.webContents.setWindowOpenHandler(({ url }) => {
+    shell.openExternal(url);
+    return { action: 'deny' };
+  });
   win.loadURL(`http://127.0.0.1:${serverPort}`);
   win.on('close', (e) => {
     // macOS convention: closing the window keeps the app (and engine —
@@ -137,10 +191,17 @@ const WA_LABELS = {
   error: 'Error',
 };
 
+function waLabel(state) {
+  if (!state) return 'Engine unreachable';
+  const b = state.wa?.browser;
+  if (b && b.status === 'downloading') return `Downloading browser… ${b.percent ?? 0}%`;
+  return WA_LABELS[state.wa?.status] || state.wa?.status;
+}
+
 async function refreshTray() {
   if (!tray || !serverPort) return;
   const state = await probeExisting(serverPort);
-  const wa = state ? WA_LABELS[state.wa?.status] || state.wa?.status : 'Engine unreachable';
+  const wa = waLabel(state);
   const pending = state ? (state.schedule || []).filter((c) => c.status === 'pending').length : 0;
   const lines = [
     { label: `WhatsApp: ${wa}${state?.wa?.self?.number ? ` (${state.wa.self.number})` : ''}`, enabled: false },
@@ -156,8 +217,12 @@ async function refreshTray() {
 }
 
 function createTray() {
-  tray = new Tray(nativeImage.createEmpty());
-  tray.setTitle('💬'); // text-only menu-bar presence
+  // Monochrome template image (app/assets/trayTemplate.png, @2x auto-loaded);
+  // the "Template" suffix lets macOS tint it for light/dark menu bars. Falls
+  // back to a text glyph when the asset is missing.
+  const img = nativeImage.createFromPath(path.join(__dirname, 'assets', 'trayTemplate.png'));
+  tray = new Tray(img.isEmpty() ? nativeImage.createEmpty() : img);
+  if (img.isEmpty()) tray.setTitle('💬');
   refreshTray();
   setInterval(refreshTray, 15000);
 }
@@ -175,12 +240,23 @@ if (!app.requestSingleInstanceLock()) {
   });
 
   app.whenReady().then(async () => {
-    const existing = await probeExisting(DEFAULT_PORT);
+    // Packaged builds get the Dock icon from the bundle; in dev the process
+    // is Electron's, so set it by hand.
+    if (!PACKAGED && app.dock) {
+      const icon = path.join(__dirname, 'assets', 'icon.png');
+      if (fs.existsSync(icon)) app.dock.setIcon(icon);
+    }
+
+    const existing = await findExisting();
     if (existing) {
-      serverPort = DEFAULT_PORT; // terminal-started instance — attach, don't spawn
+      serverPort = existing; // terminal-started instance — attach, don't spawn
     } else {
       try {
-        serverPort = await spawnEngine();
+        // Prefer the well-known port (stable OAuth redirect, findable by
+        // run-due.js); fall back to an ephemeral one only if something
+        // that is not WhatsThat squats on it.
+        const port = (await portFree(DEFAULT_PORT)) ? DEFAULT_PORT : 0;
+        serverPort = await spawnEngine(port);
       } catch (err) {
         dialog.showErrorBox('WhatsThat could not start', err.message);
         app.exit(1);
@@ -203,6 +279,16 @@ if (!app.requestSingleInstanceLock()) {
       e.preventDefault();
       const child = serverChild;
       const force = setTimeout(() => {
+        // Engine did not go quietly: reap its browser too, or it would keep
+        // the WhatsApp profile locked.
+        const info = readEngineInfo(DATA_DIR);
+        if (info && info.pid === child.pid && info.chromePid) {
+          try {
+            process.kill(info.chromePid, 'SIGKILL');
+          } catch {
+            /* already gone */
+          }
+        }
         child.kill('SIGKILL');
         app.exit(0);
       }, 6000);

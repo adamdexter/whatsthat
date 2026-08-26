@@ -9,6 +9,7 @@
 const path = require('path');
 const { spawn } = require('child_process');
 const { checkAndUpdate } = require('../src/update');
+const { resolveDataDir } = require('../src/datadir');
 
 const ROOT = path.join(__dirname, '..');
 
@@ -19,7 +20,7 @@ const ROOT = path.join(__dirname, '..');
     try {
       await checkAndUpdate({
         rootDir: ROOT,
-        dataDir: process.env.WHATSTHAT_DATA_DIR || ROOT,
+        dataDir: resolveDataDir({ rootDir: ROOT }).dir,
         log: console.log,
       });
     } catch (err) {
