@@ -301,7 +301,11 @@ Sheet. Single user (Adam), ~30–40 recipients, 6–8 campaigns/year.
   the dmg + zip (`gh release upload --clobber` when the release already
   exists, so a local `gh release create` beforehand is fine). The release
   flow is therefore: bump + commit + `git tag vX.Y.Z` + `git push origin
-  main --tags` — no local build needed.
+  main --tags` (CI publishes the DMG) — **then `npm run install-app`**, which
+  builds locally, quits the running app (refusing under a send in progress;
+  the quit guard may ask about pending sends), replaces
+  `/Applications/WhatsThat.app` and relaunches it. The user asked for this
+  after every update — the installed app must never lag the repo.
   Gotcha: electron-builder auto-publishes when it sees a git tag (`Implicit
   publishing triggered by git tag`) and fails without GH_TOKEN — the dist
   script passes `--publish never`. GitHub also dropped the tag event when
