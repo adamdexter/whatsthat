@@ -40,7 +40,11 @@ Sheet. Single user (Adam), ~30–40 recipients, 6–8 campaigns/year.
   `@googleapis/sheets` (−200 MB), docs restructure;
   v1.12.0 = viewport layout (page never scrolls; contact table takes the
   remaining height), sent/failed chips filter the run list, "Last sent"
-  column from the send reports (`/api/history`).
+  column from the send reports (`/api/history`);
+  v1.13.0 = public repo: history rewritten to drop the hard-coded contact
+  list from `scripts/create-sheet.js` (now CSV-driven) and the sheet id from
+  CLAUDE.md, public README, `dmg` build target, repo metadata, first
+  GitHub Release.
 
 ## Feature map (v1.12.0)
 
@@ -276,7 +280,9 @@ Sheet. Single user (Adam), ~30–40 recipients, 6–8 campaigns/year.
   quit with a pending send in an automated check — the quit guard dialog
   blocks. A real login → menu-bar-only launch is the one thing only the user
   can verify (`wasOpenedAtLogin` + the uptime heuristic).
-- Packaged app: `npm run dist` (verify-build runs automatically), then a mock
+- Packaged app: `npm run dist` builds `dist/WhatsThat-<v>-arm64.dmg` + `.zip`
+  (the unpacked app stays in `dist/mac-arm64/`; verify-build runs
+  automatically), then a mock
   smoke by running the binary directly — `open -a` drops env:
   `WHATSTHAT_MOCK=1 WHATSTHAT_DATA_DIR=$(mktemp -d) PORT=3852
   dist/mac-arm64/WhatsThat.app/Contents/MacOS/WhatsThat` → window + tray,
@@ -435,7 +441,9 @@ native design system v1.7.0, **Phase B split into three increments**):
   contacts, Data & reports card, report reveal, `@googleapis/sheets`, docs.
   Phase B is complete. No consent screen (deferred to Phase C).
 - **Phase C (v2.0.0)**: signing/notarization (needs Adam's Apple Developer
-  ID — his call), electron-updater + public GitHub Releases, LICENSE.
+  ID — his call), electron-updater, LICENSE (still undecided — README says
+  "all rights reserved until then"). GitHub Releases with a DMG exist since
+  v1.13.0 (`gh release create v<x> dist/*.dmg dist/*.zip`).
 
 Outstanding / watchlist:
 - **Upstream release watch**: when whatsapp-web.js ships > 1.34.7, the
@@ -456,10 +464,18 @@ Outstanding / watchlist:
   (People API `people.listDirectoryPeople`, `directory.readonly`) — needs
   admin-enabled sharing; directory profiles often lack mobile numbers.
 
-## User's setup (context)
+## Author's setup (context)
 
-- Google consent screen is on his Workspace; sheet: "WhatsThat Contacts"
-  (id `<your-spreadsheet-id>`), tab `Contacts`, columns
-  `firstName lastName nickname phone email rank Status`; rank dropdown
-  Prospect/EA/FC/MM, Status Active/Inactive.
-- One contact has no phone number in the sheet (auto-excluded until added).
+- Google consent screen is on a Workspace account (Internal — tokens never
+  expire); contact sheet "WhatsThat Contacts" (`<your-spreadsheet-id>`),
+  tab `Contacts`, columns `firstName lastName nickname phone email rank
+  Status`; `rank` and `Status` are dropdown columns that drive the send
+  rules. ~30–40 recipients, 6–8 campaigns a year.
+- **This repo is public** (github.com/adamdexter/whatsthat, since
+  2026-08-25). Never commit contact data, sheet ids, tokens, sessions or
+  reports — `*.local.json`, `.wwebjs_auth/`, `reports/`, `logs/` are
+  gitignored, and `scripts/create-sheet.js` reads contacts from a CSV
+  argument (an early version hard-coded them; history was rewritten before
+  publishing). Re-run the audit before every push:
+  `git log --all -p | grep -E "[0-9]{3}-[0-9]{3}-[0-9]{4}|@[a-z]+\\.(org|com)"`
+  should show only `555` test numbers and the author/npm emails.
