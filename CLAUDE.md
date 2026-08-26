@@ -55,12 +55,19 @@ Sheet. Single user (Adam), ~30–40 recipients, 6–8 campaigns/year.
   `draft.columnKinds`; sample CSV gains a `city` column;
   v1.17.0 = "Hide unselected" toggle on the contact table (constant label,
   pressed state, count line shows "· N hidden"; persisted as
-  `draft.hideUnselected`).
+  `draft.hideUnselected`);
+  v1.18.0 = CSV file drag-and-drop onto the Contacts card + "Select file…"
+  picker (both fill the paste box and load).
 
 ## Feature map (v1.14.0)
 
 - **Contacts**: Google Sheet (OAuth, read-only scope) or pasted CSV/TSV; row 1
   headers, `phone` column required; E.164 normalization (bare 10-digit → +1).
+  CSV can also arrive as a file: `#btn-pick-csv` → hidden `<input type=file>`,
+  or drag-and-drop anywhere on `#card-contacts` (dragenter/leave depth
+  counter for the highlight; document-level dragover/drop preventDefault so
+  a stray drop never navigates the window). Both call `loadCsvFile(file)`:
+  unfold `#src-csv`, fill `#csv-text`, click Load.
 - **Send rules** (any column; v1.16.0 made the detection scale-aware):
   `public/columns.js` `classifyColumns({headers, contacts, decisions})`
   labels every non-phone column `filter` / `ask` / `field`: distinct

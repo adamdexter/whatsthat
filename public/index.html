@@ -69,9 +69,14 @@
     <!-- Contacts tab -->
     <section class="card" id="card-contacts">
       <details id="src-csv" open>
-        <summary>Paste contacts copied from a spreadsheet (CSV / cells)</summary>
-        <textarea id="csv-text" rows="5" placeholder="firstName,lastName,nickname,phone&#10;Ada,Lovelace,Ada,415-555-0134"></textarea>
-        <div class="row"><button id="btn-load-csv" class="primary">Load pasted contacts</button></div>
+        <summary>Paste contacts copied from a spreadsheet (CSV / cells) — or drop a .csv file anywhere on this tab</summary>
+        <textarea id="csv-text" rows="5" placeholder="firstName,lastName,nickname,phone&#10;Ada,Lovelace,Ada,415-555-0134&#10;&#10;…or drag a .csv / .tsv file here"></textarea>
+        <div class="row">
+          <button id="btn-load-csv" class="primary">Load pasted contacts</button>
+          <button id="btn-pick-csv" type="button">Select file…</button>
+          <input type="file" id="csv-file" accept=".csv,.tsv,.txt,text/csv,text/tab-separated-values,text/plain" class="hidden" />
+          <span id="csv-file-note" class="muted"></span>
+        </div>
       </details>
       <details id="src-sheet">
         <summary>Load from a Google Sheet <span class="muted">(needs Google connected in Setup)</span></summary>

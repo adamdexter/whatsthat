@@ -101,8 +101,9 @@ launches connect automatically.
 ### 2. Contacts
 
 The quickest way needs no setup: copy cells from any spreadsheet (Numbers,
-Excel, Google Sheets) and paste them into the **Contacts** tab. Row 1 is
-headers and must include a `phone` column; every other column becomes a
+Excel, Google Sheets) and paste them into the **Contacts** tab — or drag a
+`.csv`/`.tsv` file from Finder onto the tab, or use **Select file…**. Row 1
+is headers and must include a `phone` column; every other column becomes a
 template variable:
 
 | firstName | lastName | nickname | phone        | rank | Status |

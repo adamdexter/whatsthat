@@ -1312,6 +1312,67 @@ async function boot() {
   document.querySelectorAll('#tabs button').forEach((b) => {
     b.onclick = () => setView(b.dataset.view);
   });
+  // CSV from a file: the picker button, or a file dropped anywhere on the
+  // Contacts card (unfolds the paste box, fills it, loads it).
+  async function loadCsvFile(file) {
+    if (!file) return;
+    const note = $('csv-file-note');
+    try {
+      const text = await file.text();
+      $('src-csv').open = true;
+      $('csv-text').value = text;
+      const label = `${file.name} (${Math.round(file.size / 1024) || 1} KB)`;
+      note.textContent = label;
+      await $('btn-load-csv').onclick();
+      // The paste box folds once a list is in — say what was loaded where it stays visible.
+      if (S.contacts.length) {
+        const cn = $('contacts-note');
+        cn.textContent = `📄 Loaded ${label} — drop another file or use Select file… to replace it.`;
+        cn.classList.remove('hidden');
+      }
+    } catch (err) {
+      note.textContent = `Could not read ${file.name}: ${err.message}`;
+    }
+  }
+  const csvFileFrom = (dt) => {
+    const files = [...(dt?.files || [])];
+    return files.find((f) => /\.(csv|tsv|txt)$/i.test(f.name) || /^text\//.test(f.type)) || files[0] || null;
+  };
+  $('btn-pick-csv').onclick = () => $('csv-file').click();
+  $('csv-file').onchange = () => {
+    loadCsvFile($('csv-file').files[0]);
+    $('csv-file').value = ''; // same file again should work
+  };
+  const card = $('card-contacts');
+  let dragDepth = 0;
+  card.addEventListener('dragenter', (e) => {
+    if (![...(e.dataTransfer?.types || [])].includes('Files')) return;
+    e.preventDefault();
+    dragDepth++;
+    card.classList.add('drop-target');
+  });
+  card.addEventListener('dragover', (e) => {
+    if (![...(e.dataTransfer?.types || [])].includes('Files')) return;
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'copy';
+  });
+  card.addEventListener('dragleave', () => {
+    if (--dragDepth <= 0) {
+      dragDepth = 0;
+      card.classList.remove('drop-target');
+    }
+  });
+  card.addEventListener('drop', (e) => {
+    e.preventDefault();
+    dragDepth = 0;
+    card.classList.remove('drop-target');
+    if (document.body.dataset.view !== 'contacts' && document.body.dataset.layout !== 'split') setView('contacts');
+    loadCsvFile(csvFileFrom(e.dataTransfer));
+  });
+  // A file dropped outside the card must not navigate the window away.
+  document.addEventListener('dragover', (e) => e.preventDefault());
+  document.addEventListener('drop', (e) => e.preventDefault());
+
   $('btn-show-reports').onclick = () => api('/api/open-folder', { method: 'POST', body: { what: 'reports' } }).catch(() => {});
   $('btn-show-logs').onclick = () => api('/api/open-folder', { method: 'POST', body: { what: 'logs' } }).catch(() => {});
   $('btn-fresh').onclick = () => {

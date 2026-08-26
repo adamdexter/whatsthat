@@ -511,6 +511,9 @@ button.toggle.active {
 }
 button.toggle.active:hover:not(:disabled) { background: color-mix(in srgb, var(--accent) 24%, var(--control-bg)); }
 .contacts-toolbar { display: flex; gap: 8px; align-items: center; }
+/* Drop a .csv anywhere on the Contacts card */
+#card-contacts.drop-target { outline: 2px dashed var(--accent); outline-offset: -6px; background: color-mix(in srgb, var(--accent) 6%, var(--card)); }
+#card-contacts.drop-target #csv-text { border-color: var(--accent); }
 .filters-clear { margin-left: 8px; font-size: 11.5px; color: var(--accent-text); text-decoration: none; }
 .filters-clear:hover { text-decoration: underline; }
 
