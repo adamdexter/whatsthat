@@ -75,6 +75,27 @@ screenshots.
 - UK numbers with a leading `+` are kept as-is; bare 10-digit numbers are
   treated as US.
 
+## `car-club.csv` — 150 people, a real-sized list
+
+| firstName | lastName | phone | email | City | make | model | year | category |
+|---|---|---|---|---|---|---|---|---|
+
+A Bay Area collector-car club. At 150 people the thresholds are 15
+(automatic) and 38 (ask).
+
+- **Automatic rules:** `make` (14 marques — Porsche, Ferrari, Jaguar, MG,
+  Shelby, Datsun…) and `category` (Antique / Vintage / Modern, consistent
+  with each car's `year`).
+- **Asked once:** `City` — 24 Bay Area cities is more than 15 but well
+  under 38, so the app asks. Say **Send rule** to message by city
+  ("Peninsula cars & coffee this Sunday"), or **Field** if you'd only ever
+  write *"see you in {{City}}"*.
+- **Fields:** `model` (62 different cars) and `year` (47 values) — perfect
+  in the text: *"bring the {{year}} {{make}} {{model}}"*.
+- Try: `category = Vintage` + `make = Porsche, Datsun` →
+  *"{{firstName}}, the vintage Japanese-vs-German run is on the 12th — the
+  {{year}} {{model}} would be perfect for it. In?"*
+
 ## `contacts-sample.csv` — 14 people, the general case
 
 | firstName | lastName | nickname | phone | email | city | rank | Status |

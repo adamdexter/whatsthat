@@ -114,8 +114,9 @@ template variable:
   need their country code with a leading `+`.
 - A row without a valid phone number is shown but excluded from sending.
 - Want to try it before touching your own list? The [`examples/`](examples/)
-  folder has five fictional lists (dinner party, team offsite, alumni
-  reunion, golf day, a general one) on reserved `555` numbers — nobody
+  folder has six fictional lists (dinner party, team offsite, alumni
+  reunion, golf day, a 150-member car club, a general one) on reserved
+  `555` numbers — nobody
   real can receive anything — each with notes on what the app makes of its
   columns.
 
@@ -189,7 +190,7 @@ A worked example — a 20-person team roster:
 
 That file is [`examples/team-offsite.csv`](examples/team-offsite.csv); the
 other scenarios in [`examples/README.md`](examples/README.md) show the same
-rules at 8, 12, 14 and 40 people.
+rules at 8, 12, 14, 40 and 150 people.
 
 ## Sending a campaign
 
