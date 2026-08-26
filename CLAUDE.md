@@ -44,9 +44,12 @@ Sheet. Single user (Adam), ~30–40 recipients, 6–8 campaigns/year.
   v1.13.0 = public repo: history rewritten to drop the hard-coded contact
   list from `scripts/create-sheet.js` (now CSV-driven) and the sheet id from
   CLAUDE.md, public README, `dmg` build target, repo metadata, first
-  GitHub Release.
+  GitHub Release;
+  v1.14.0 = "Last sent" column removed (too noisy; `/api/history` +
+  `src/history.js` stay for a future export), side-by-side layout toggle
+  for wide windows (`body[data-layout=split]`, persisted as `draft.layout`).
 
-## Feature map (v1.12.0)
+## Feature map (v1.14.0)
 
 - **Contacts**: Google Sheet (OAuth, read-only scope) or pasted CSV/TSV; row 1
   headers, `phone` column required; E.164 normalization (bare 10-digit → +1).
@@ -246,13 +249,21 @@ Sheet. Single user (Adam), ~30–40 recipients, 6–8 campaigns/year.
   `.progress-item[data-status]` rows, greys the chip (`.off`), and
   `applyReportFilter()` shows "No message status selected…" when nothing is
   visible. Reset on every new run.
-- **Last sent** (v1.12.0): `src/history.js` folds `reports/run-*.json` into
+- **Send history API** (v1.12.0; the table column was removed in v1.14.0 as
+  too noisy): `src/history.js` folds `reports/run-*.json` into
   `{ byPhone: { '+1…': { at, text, reportFile, count } } }` — last
   *successful* send per E.164 phone, later report wins, cached by dir
-  signature; `GET /api/history`. Local by design: the Google token is
-  read-only and CSV contacts have no sheet. The contact table's "Last sent"
-  cell shows date + 44-char preview, full message + count on hover;
-  refreshed after every `run_done`.
+  signature; `GET /api/history`. Local by design (read-only Google token,
+  CSV contacts have no sheet). Kept for a future history view/export.
+- **Side by side** (v1.14.0): toolbar toggle `#btn-split` → `S.layout` →
+  `body[data-layout="split"]` (persisted as `draft.layout`). Under
+  `@media (min-width: 1280px)` and outside Setup, `main` becomes a 2-column
+  grid: `#card-contacts` (flex column, table scrolls) left, `#col-message`
+  (a wrapper around the Message + Send cards, `display: contents` in tabbed
+  mode) right as its own scrolling column; the segmented control hides.
+  Narrower than 1280px the toggle button hides and tabs come back with the
+  setting remembered. Note the card display rules are `main .card` (not
+  `main > .card`) because of that wrapper.
 - **Sheets client**: `src/sheets.js` uses `@googleapis/sheets` (same
   `auth.OAuth2`, same token file) — the 200 MB `googleapis` umbrella is a
   devDependency now, used only by `scripts/create-sheet.js`.

@@ -17,9 +17,9 @@ const S = {
   progressCount: 0,
   totalToSend: 0,
   reportFilter: { sent: true, failed: true, cancelled: true }, // which statuses the run list shows
-  history: {}, // phone -> { at, text, reportFile, count } — last successful send (from reports)
   schedule: [],
   lastTab: 'contacts', // persisted via the draft; Setup is never remembered
+  layout: 'tabs', // 'tabs' | 'split' (side by side on wide windows); persisted via the draft
 };
 
 const BLANK = '__blank__';
@@ -382,7 +382,7 @@ function renderContacts() {
         .join('');
       return `<tr class="${c.phone ? '' : 'invalid'}">
         <td><input type="checkbox" data-id="${c.id}" ${checked} ${disabled} /></td>
-        ${cells}${phoneCell}${lastSentCell(c)}
+        ${cells}${phoneCell}
       </tr>`;
     })
     .join('');
@@ -397,7 +397,6 @@ function renderContacts() {
         <th><input type="checkbox" id="check-all" ${allSelected ? 'checked' : ''} /></th>
         ${headers.filter((h) => h.toLowerCase() !== 'phone').map((h) => `<th>${esc(h)}</th>`).join('')}
         <th>Phone</th>
-        <th title="Last message WhatsThat delivered to this number (from the send reports)">Last sent</th>
       </tr></thead>
       <tbody>${rows}</tbody>
     </table>
@@ -430,33 +429,6 @@ function renderContacts() {
   };
   renderCountLine();
   renderRunButton();
-}
-
-// "Last sent" = the most recent message WhatsThat delivered to this phone,
-// per the send reports (local; works for CSV contacts too). Hover shows
-// the whole message.
-const shortDate = (iso) => {
-  const d = new Date(iso);
-  const sameYear = d.getFullYear() === new Date().getFullYear();
-  return d.toLocaleDateString([], { month: 'short', day: 'numeric', ...(sameYear ? {} : { year: 'numeric' }) });
-};
-function lastSentCell(c) {
-  const h = c.phone ? S.history[c.phone] : null;
-  if (!h) return '<td class="last-sent"></td>';
-  const text = String(h.text || '').replace(/\s+/g, ' ').trim();
-  const preview = text.length > 44 ? `${text.slice(0, 44)}…` : text;
-  const tip = `${h.at ? new Date(h.at).toLocaleString() : ''}${h.count > 1 ? ` · ${h.count} messages so far` : ''}\n\n${text}`;
-  return `<td class="last-sent" title="${esc(tip)}"><span class="when">${h.at ? esc(shortDate(h.at)) : ''}</span>${esc(preview)}</td>`;
-}
-
-async function refreshHistory() {
-  try {
-    const { byPhone } = await api('/api/history');
-    S.history = byPhone || {};
-  } catch {
-    /* keep what we had */
-  }
-  if (S.contacts.length) renderContacts();
 }
 
 function renderCountLine() {
@@ -992,7 +964,6 @@ function onRunDone(e) {
     };
   });
   applyReportFilter();
-  refreshHistory(); // the "Last sent" column just changed
   renderRunButton();
 }
 
@@ -1041,6 +1012,7 @@ const saveDraft = debounce(() => {
       selectedIds: [...S.selected],
       previewId: S.previewId,
       activeTab: S.lastTab,
+      layout: S.layout,
     },
   }).catch(() => {});
 }, 600);
@@ -1072,6 +1044,12 @@ function setView(view, { save = true } = {}) {
   if (save) saveDraft();
 }
 
+function applyLayout() {
+  document.body.dataset.layout = S.layout;
+  const btn = $('btn-split');
+  btn.classList.toggle('active', S.layout === 'split');
+  btn.title = S.layout === 'split' ? 'Back to tabs' : 'Side by side: show Contacts and Message together (wide windows)';
+}
 function openSetup(pinned) {
   setupPinned = pinned;
   setView('setup', { save: false });
@@ -1108,11 +1086,6 @@ async function boot() {
   S.schedule = state.schedule || [];
   S.version = state.version;
   S.paths = state.paths || null;
-  try {
-    S.history = (await api('/api/history')).byPhone || {};
-  } catch {
-    S.history = {};
-  }
   sessionStorage.removeItem('wt-reloaded-401'); // authenticated fine — re-arm the stale-token reload
   if (state.version) $('app-version').textContent = `v${state.version}`;
 
@@ -1144,6 +1117,8 @@ async function boot() {
   // Initial view: setup owns the screen until WhatsApp is connected;
   // otherwise land on the last-used tab.
   if (TAB_VIEWS.includes(d.activeTab)) S.lastTab = d.activeTab;
+  S.layout = d.layout === 'split' ? 'split' : 'tabs';
+  applyLayout();
   if (S.wa.status === 'ready') setView(S.lastTab, { save: false });
   else openSetup(false);
 
@@ -1268,6 +1243,11 @@ async function boot() {
         box.innerHTML = `<div class="error">${esc(err.message)}</div>`;
       }
     };
+  };
+  $('btn-split').onclick = () => {
+    S.layout = S.layout === 'split' ? 'tabs' : 'split';
+    applyLayout();
+    saveDraft();
   };
   $('btn-setup').onclick = () => openSetup(true);
   $('pill-wa').onclick = () => openSetup(true);

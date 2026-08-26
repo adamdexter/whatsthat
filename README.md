@@ -42,6 +42,8 @@ broken variable, keep a written report of exactly what happened.
   needs a QR scan.
 - **Remembers where you left off** — message, contact list, and exact
   selection survive restarts.
+- **Side by side on wide screens** — a toolbar toggle shows Contacts and
+  Message next to each other instead of as tabs.
 
 ## Install
 
@@ -116,10 +118,6 @@ modify your sheet.
 - `node scripts/create-sheet.js contacts.csv` builds a formatted sheet
   (frozen bold header, dropdowns for columns like `Status`) from a CSV. It
   asks separately for one-time write access; the app itself stays read-only.
-
-The contact table also shows **Last sent** — the date and a preview of the
-last message WhatsThat actually delivered to that number (hover for the whole
-text), from the app's own send reports.
 
 ## Sending a campaign
 

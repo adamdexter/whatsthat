@@ -19,6 +19,9 @@
         <span id="pill-wa" class="pill clickable" title="WhatsApp status — click to open Setup">WhatsApp: …</span>
         <span id="pill-google" class="pill">Google: …</span>
         <span id="pill-mock" class="pill pill-mock hidden">MOCK MODE</span>
+        <button type="button" id="btn-split" class="icon-btn" title="Side by side: show Contacts and Message together (wide windows)" aria-label="Side by side">
+          <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><rect x="1.5" y="2.5" width="5.5" height="11" rx="1.2"/><rect x="9" y="2.5" width="5.5" height="11" rx="1.2"/></svg>
+        </button>
         <button type="button" id="btn-setup" class="icon-btn" title="Setup" aria-label="Setup">
           <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="8" r="2.4"/><path d="M8 1.4v2M8 12.6v2M1.4 8h2M12.6 8h2M3.3 3.3l1.5 1.5M11.2 11.2l1.5 1.5M12.7 3.3l-1.5 1.5M4.8 11.2l-1.5 1.5"/></svg>
         </button>
@@ -85,7 +88,8 @@
       <div id="contacts-table-wrap"></div>
     </section>
 
-    <!-- Message tab -->
+    <!-- Message tab (wrapped so the side-by-side layout can scroll it as one column) -->
+    <div id="col-message">
     <section class="card" id="card-message">
       <div id="var-chips" class="chips"></div>
       <div class="ta-wrap">
@@ -130,6 +134,7 @@
       <div id="run-report" class="hidden"></div>
       <div id="schedule-list"></div>
     </section>
+    </div>
   </main>
 
   <script src="format.js"></script>

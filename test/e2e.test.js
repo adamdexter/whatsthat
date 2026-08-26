@@ -185,6 +185,14 @@ test('history indexes the last successful send per phone from the reports', asyn
   assert.equal(data.byPhone['+14155550199'], undefined, 'a not-on-WhatsApp number never appears');
 });
 
+test('the side-by-side layout choice persists in the draft', async () => {
+  const set = await api('/api/draft', { method: 'POST', body: { layout: 'split' } });
+  assert.equal(set.status, 200);
+  assert.equal((await api('/api/state')).data.draft.layout, 'split');
+  await api('/api/draft', { method: 'POST', body: { layout: 'tabs' } });
+  assert.equal((await api('/api/state')).data.draft.layout, 'tabs');
+});
+
 test('cross-origin POSTs are rejected', async () => {
   const res = await fetch(`${BASE}/api/run/cancel`, {
     method: 'POST',

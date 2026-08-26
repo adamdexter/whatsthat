@@ -104,7 +104,7 @@ header {
   user-select: none;
 }
 .header-inner {
-  max-width: 920px;
+  max-width: 1000px; /* toolbar needs a little more room than the cards */
   height: 100%;
   margin: 0 auto;
   padding: 0 20px;
@@ -115,7 +115,7 @@ header {
 }
 /* Room for the traffic lights when running inside the Mac app shell */
 body.in-app .header-inner { max-width: none; padding-left: 84px; padding-right: 16px; }
-h1 { font-size: 13px; font-weight: 600; margin: 0; letter-spacing: -0.01em; }
+h1 { font-size: 13px; font-weight: 600; margin: 0; letter-spacing: -0.01em; white-space: nowrap; }
 .version { font-size: 11px; font-weight: 400; color: var(--muted); margin-left: 4px; }
 
 /* Segmented-control tabs (Finder/System Settings idiom) */
@@ -161,7 +161,8 @@ h1 { font-size: 13px; font-weight: 600; margin: 0; letter-spacing: -0.01em; }
 .icon-btn.active { background: var(--fill-tertiary); color: var(--accent-text); }
 
 /* View switching: each tab reveals its cards; the boot notice is global */
-main > .card { display: none; }
+main .card { display: none; }
+#col-message { display: contents; } /* invisible wrapper in the tabbed layout */
 body[data-view="setup"] #card-wa,
 body[data-view="setup"] #card-google,
 body[data-view="setup"] #card-data { display: block; }
@@ -173,7 +174,7 @@ body[data-view="message"] #card-message,
 body[data-view="message"] #card-send { display: block; }
 
 /* Status capsules: neutral fill + colored dot, like native status items */
-.pills { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; -webkit-app-region: no-drag; }
+.pills { display: flex; gap: 6px; flex-wrap: nowrap; align-items: center; -webkit-app-region: no-drag; }
 .pill.clickable { cursor: pointer; }
 .pill.clickable:hover { background: var(--fill-tertiary); }
 .pill {
@@ -214,7 +215,47 @@ main {
   gap: 16px;
   overflow: auto; /* safety valve for the Message tab on a very short window */
 }
-main > .card { flex: none; }
+main .card { flex: none; }
+
+/* Side by side (toolbar toggle, wide windows only): Contacts on the left,
+   Message + Send as a scrolling column on the right. Below the breakpoint
+   the toggle hides and the tabs come back — the setting is remembered. */
+@media (min-width: 1280px) {
+  body[data-layout="split"]:not([data-view="setup"]) main {
+    max-width: 1900px;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    grid-template-rows: auto minmax(0, 1fr);
+    column-gap: 16px;
+    row-gap: 0;
+    overflow: hidden;
+  }
+  body[data-layout="split"]:not([data-view="setup"]) .header-inner { max-width: 1900px; }
+  body[data-layout="split"]:not([data-view="setup"]) #boot-notice { grid-column: 1 / -1; }
+  body[data-layout="split"]:not([data-view="setup"]) #boot-notice:not(.hidden) { margin-bottom: 16px; }
+  body[data-layout="split"]:not([data-view="setup"]) #card-contacts {
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    grid-column: 1;
+    grid-row: 2;
+  }
+  body[data-layout="split"]:not([data-view="setup"]) #col-message {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+    min-height: 0;
+    overflow: auto;
+    grid-column: 2;
+    grid-row: 2;
+  }
+  body[data-layout="split"]:not([data-view="setup"]) #card-message,
+  body[data-layout="split"]:not([data-view="setup"]) #card-send { display: block; }
+  body[data-layout="split"]:not([data-view="setup"]) .tabs { visibility: hidden; }
+}
+@media (max-width: 1279px) {
+  #btn-split { display: none; }
+}
 
 .card {
   background: var(--card);
@@ -455,8 +496,6 @@ details[open] summary { margin-bottom: 8px; }
 .contacts-toolbar { margin: 10px 0 6px; }
 /* The Contacts tab owns the viewport — let the list breathe */
 #contacts-table-wrap { flex: 1; min-height: 0; overflow: auto; margin-top: 8px; border-radius: 8px; }
-td.last-sent { max-width: 280px; overflow: hidden; text-overflow: ellipsis; color: var(--muted); cursor: default; }
-td.last-sent .when { color: var(--text); font-weight: 500; margin-right: 6px; }
 table { border-collapse: collapse; width: 100%; font-size: 13px; }
 th, td {
   text-align: left;

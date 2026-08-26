@@ -237,7 +237,7 @@ app.post('/api/open-folder', (req, res) => {
 });
 
 app.post('/api/draft', (req, res) => {
-  const allowed = ['template', 'sheetUrl', 'tabName', 'delayMinMs', 'delayMaxMs', 'filters', 'contactsCache', 'selectedIds', 'previewId', 'activeTab'];
+  const allowed = ['template', 'sheetUrl', 'tabName', 'delayMinMs', 'delayMaxMs', 'filters', 'contactsCache', 'selectedIds', 'previewId', 'activeTab', 'layout'];
   const patch = {};
   for (const key of allowed) {
     if (key in (req.body || {})) patch[key] = req.body[key];
