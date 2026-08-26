@@ -3,11 +3,22 @@
 [![CI](https://github.com/adamdexter/whatsthat/actions/workflows/ci.yml/badge.svg)](https://github.com/adamdexter/whatsthat/actions/workflows/ci.yml)
 [![Latest release](https://img.shields.io/github/v/release/adamdexter/whatsthat?include_prereleases&label=release)](https://github.com/adamdexter/whatsthat/releases/latest)
 
-**Personal WhatsApp messages, at the scale of a real personal network — from a Mac app that runs entirely on your machine.**
+**Bulk WhatsApp one-to-one messaging app.** Personal messages at the scale
+of a real network — sent as individual DMs from your own number, by a Mac
+app that runs entirely on your machine.
+
+![Send rules narrow a 150-member car club down to the 11 Porsche owners](docs/screenshots/03-send-rule-porsche.png)
 
 > **Status: alpha/beta.** It works end-to-end and is in daily use by its author,
 > but it is young, macOS-only, unsigned, and built on unofficial WhatsApp
 > automation. Read [Honest limitations](#honest-limitations) before you rely on it.
+
+WhatsApp groups are great for getting a message out to everyone, but a
+group post is easy to scroll past and rarely gets the attention a direct
+message does. WhatsThat was built for the people who do the organizing —
+social chairs, club officers, fraternity and alumni coordinators, the friend
+who plans the trip — so they can send everyone in the group a personal DM at
+once, and get the receipt and response rates a group post never will.
 
 Some messages shouldn't come from a marketing platform. When you're inviting
 thirty or forty people you actually know to dinner, a talk, or a round of
@@ -50,6 +61,56 @@ broken variable, keep a written report of exactly what happened.
   selection survive restarts.
 - **Side by side on wide screens** — a toolbar toggle shows Contacts and
   Message next to each other instead of as tabs.
+
+## A quick tour
+
+*(Fictional contacts from [`examples/car-club.csv`](examples/car-club.csv) —
+a 150-member Bay Area collector-car club. Every number is a reserved `555`
+number.)*
+
+**1. Drop in a list.** Drag a `.csv` from Finder onto the Contacts tab (or
+paste cells copied from any spreadsheet, or pick a file). The whole tab
+lights up as the drop target.
+
+![Dragging car-club.csv onto the Contacts tab](docs/screenshots/01-drop-a-csv.png)
+
+**2. Everything becomes a column, and the right columns become send rules.**
+150 members loaded; `make` and `category` were recognised as categories on
+sight, and `City` (24 values) got a one-time "send rule or per-contact
+field?" question. Every column — `model`, `year`, `email` — is also a
+`{{variable}}` for the message.
+
+![The full club roster with send rules for City, make and category](docs/screenshots/02-list-loaded.png)
+
+**3. One click picks the audience.** *Use case: a marque-specific meet.*
+Tap **Porsche** and the list is 11 owners; the count line says who's in.
+
+![make = Porsche selects 11 of 150](docs/screenshots/03-send-rule-porsche.png)
+
+**4. Combine rules.** *Use case: a Peninsula & South Bay cars-and-coffee.*
+Several cities on, everything else ignored — 45 people, still one click each
+to add or drop someone.
+
+![Seven cities selected: 45 of 150 contacts](docs/screenshots/04-send-rules-cities.png)
+
+**5. Hide the rest.** *Use case: checking the list before you send.*
+**Hide unselected** collapses the table to the 45 who'll get the message;
+the count line says 105 are hidden.
+
+![Hide unselected: 45 shown, 105 hidden](docs/screenshots/05-hide-unselected.png)
+
+**6. Write it once, send it as DMs.** *Use case: the actual invite.* Click a
+chip or type `{` to insert a variable; the preview shows the message
+exactly as one recipient will see it. **Send test to me** first, then send
+— one message at a time, from your number, with natural pauses — or
+schedule it. Pending and past scheduled sends are listed underneath.
+
+![Message with {{firstName}} and a live preview; Send to 11 people; Schedule for later](docs/screenshots/06-message-and-send.png)
+
+**7. No setup required to start.** Paste, drop, or **Select file…** — a Google
+Sheet is optional.
+
+![The paste box with Load pasted contacts and Select file…](docs/screenshots/07-paste-or-select-file.png)
 
 ## Install
 

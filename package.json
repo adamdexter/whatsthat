@@ -1,7 +1,7 @@
 {
   "name": "whatsthat",
   "version": "1.20.1",
-  "description": "Personalized 1:1 WhatsApp campaign sender with Google Sheets contact import",
+  "description": "Bulk WhatsApp one-to-one messaging app — personalized DMs to everyone in a group, from your own number, run locally on your Mac",
   "author": "Adam Dexter",
   "repository": {
     "type": "git",
