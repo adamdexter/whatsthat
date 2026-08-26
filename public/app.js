@@ -10,6 +10,8 @@ const S = {
   selected: new Set(),
   filters: {}, // header -> Set of selected values (lowercased; '__blank__' for empty cells)
   savedFilters: {}, // from the persisted draft, applied when contacts load
+  columnKinds: {}, // header (lowercase) -> 'filter' | 'field': the user's answers, persisted in the draft
+  showColumnsPanel: false,
   previews: new Map(), // contact id -> { text, unknown, empty }
   previewId: null,
   contactsCache: null, // last loaded contact list, persisted for restore on restart
@@ -269,27 +271,35 @@ function setContacts(data, opts = {}) {
   if (!restore) saveDraft();
 }
 
-// ---------- Send rules (filters on categorical columns like rank/Status) ----------
+// ---------- Send rules (filters on whichever columns behave like categories) ----------
 
-// Columns with a small set of repeating values (e.g. rank, Status) are
-// offered as send rules. Mostly-unique columns (names, emails) are not.
+// Any column can be a send rule — rank, Status, city, whatever the sheet
+// has. columns.js decides from the data (scaled to the list size) and the
+// user's remembered answers; ambiguous columns are asked about once.
+function classifiedColumns() {
+  return classifyColumns({ headers: S.headers, contacts: S.contacts, decisions: S.columnKinds });
+}
 function categoricalColumns() {
-  if (S.contacts.length < 2) return [];
-  const cols = [];
-  for (const h of S.headers) {
-    if (h.toLowerCase() === 'phone') continue;
-    const seen = new Map(); // lowercased -> display casing
-    let blanks = 0;
-    for (const c of S.contacts) {
-      const v = String(c.fields[h] ?? '').trim();
-      if (v === '') blanks++;
-      else if (!seen.has(v.toLowerCase())) seen.set(v.toLowerCase(), v);
-    }
-    if (seen.size >= 1 && seen.size <= 8 && seen.size < S.contacts.length) {
-      cols.push({ header: h, values: [...seen.values()].sort(), hasBlank: blanks > 0 });
-    }
-  }
-  return cols;
+  return classifiedColumns().filter((c) => c.kind === 'filter');
+}
+function decideColumn(header, kind) {
+  S.columnKinds[header.trim().toLowerCase()] = kind;
+  if (kind === 'field') delete S.filters[header];
+  applyFiltersToSelection();
+  renderFilters();
+  renderContacts();
+  renderPreviewWarnings();
+  saveDraft();
+}
+function resetColumnDecisions() {
+  S.columnKinds = {};
+  const auto = new Set(categoricalColumns().map((c) => c.header));
+  for (const h of Object.keys(S.filters)) if (!auto.has(h)) delete S.filters[h];
+  applyFiltersToSelection();
+  renderFilters();
+  renderContacts();
+  renderPreviewWarnings();
+  saveDraft();
 }
 
 function contactMatchesFilters(c) {
@@ -307,16 +317,59 @@ function applyFiltersToSelection() {
 
 function renderFilters() {
   const el = $('contact-filters');
-  const cols = categoricalColumns();
-  if (!cols.length) {
+  const all = classifiedColumns();
+  const cols = all.filter((c) => c.kind === 'filter');
+  const asks = all.filter((c) => c.kind === 'ask');
+  if (!all.length) {
     el.innerHTML = '';
     return;
   }
+  const n = S.contacts.length;
+  const people = (k) => `${k} ${k === 1 ? 'person' : 'people'}`;
+  // Ambiguous columns: ask once, remember the answer in the draft.
+  const askHtml = asks.length
+    ? `<div class="filters-ask">
+        ${asks
+          .map(
+            (c) => `<div class="filters-ask-row">
+              <span><b>${esc(c.header)}</b> has ${c.distinct} different values across ${people(n)}${c.hasBlank ? ' (some blank)' : ''} — is it a way to <i>choose who gets a message</i>, or just information about each person?</span>
+              <span class="filters-ask-btns">
+                <button type="button" class="small" data-decide="filter" data-col="${esc(c.header)}">Send rule</button>
+                <button type="button" class="small" data-decide="field" data-col="${esc(c.header)}">Per-contact field</button>
+              </span>
+            </div>`
+          )
+          .join('')}
+      </div>`
+    : '';
+  // Manage panel: every column, its current role, and the reason.
+  const reasonText = { auto: 'few repeating values', chosen: 'your choice', unique: 'unique per person', constant: 'same for everyone', empty: 'empty', 'too-many': 'too many values', ambiguous: 'undecided' };
+  const panelHtml = S.showColumnsPanel
+    ? `<div class="columns-panel">
+        ${all
+          .map(
+            (c) => `<div class="columns-row">
+              <span class="columns-name">${esc(c.header)}</span>
+              <span class="muted columns-meta">${c.distinct} value${c.distinct === 1 ? '' : 's'} · ${reasonText[c.reason] || c.reason}</span>
+              <span class="seg">
+                <button type="button" class="${c.kind === 'filter' ? 'active' : ''}" data-decide="filter" data-col="${esc(c.header)}">Send rule</button>
+                <button type="button" class="${c.kind === 'field' ? 'active' : ''}" data-decide="field" data-col="${esc(c.header)}">Field</button>
+              </span>
+            </div>`
+          )
+          .join('')}
+        <div class="row"><a href="#" id="columns-reset" class="filters-clear">Reset to automatic</a></div>
+      </div>`
+    : '';
   const anyActive = Object.values(S.filters).some((s) => s && s.size);
   el.innerHTML = `
     <div class="filters-box">
       <span class="filters-title">Send rules</span>
       ${anyActive ? '<a href="#" class="filters-clear" id="filters-clear">clear all</a>' : ''}
+      <a href="#" class="filters-clear" id="filters-manage">${S.showColumnsPanel ? 'done' : 'columns…'}</a>
+      ${askHtml}
+      ${panelHtml}
+      ${cols.length === 0 && !asks.length && !S.showColumnsPanel ? '<div class="filters-hint">No column looks like a category yet — use <i>columns…</i> to turn one into a send rule.</div>' : ''}
       ${cols
         .map((col) => {
           const sel = S.filters[col.header] || new Set();
@@ -357,6 +410,21 @@ function renderFilters() {
       renderContacts();
       renderPreviewWarnings();
       saveDraft();
+    };
+  }
+  el.querySelectorAll('[data-decide]').forEach((btn) => {
+    btn.onclick = () => decideColumn(btn.dataset.col, btn.dataset.decide);
+  });
+  $('filters-manage').onclick = (e) => {
+    e.preventDefault();
+    S.showColumnsPanel = !S.showColumnsPanel;
+    renderFilters();
+  };
+  const reset = $('columns-reset');
+  if (reset) {
+    reset.onclick = (e) => {
+      e.preventDefault();
+      resetColumnDecisions();
     };
   }
 }
@@ -1013,6 +1081,7 @@ const saveDraft = debounce(() => {
       previewId: S.previewId,
       activeTab: S.lastTab,
       layout: S.layout,
+      columnKinds: S.columnKinds,
     },
   }).catch(() => {});
 }, 600);
@@ -1096,6 +1165,7 @@ async function boot() {
   if (d.delayMinMs) $('delay-min').value = Math.round(d.delayMinMs / 1000);
   if (d.delayMaxMs) $('delay-max').value = Math.round(d.delayMaxMs / 1000);
   if (d.filters && typeof d.filters === 'object') S.savedFilters = d.filters;
+  if (d.columnKinds && typeof d.columnKinds === 'object') S.columnKinds = d.columnKinds;
 
   // Repopulate the contact list and selection exactly as they were before the
   // last shutdown (skipped after `npm start --fresh` — the draft is empty).

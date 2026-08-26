@@ -35,8 +35,11 @@ broken variable, keep a written report of exactly what happened.
 - **Templates with `{{variables}}`** filled per person, with autocomplete and
   a live per-contact preview that renders WhatsApp formatting (*bold*,
   _italic_, ~strikethrough~, `code`) the way the recipient sees it.
-- **Send rules**: columns like `rank` or `Status` become one-click filters;
-  fine-tune with per-person checkboxes and an Inverse-selection button.
+- **Send rules from your own columns**: whatever categories your sheet has
+  (`rank`, `Status`, `city`, `group`…) become one-click filters. The app
+  works out which columns are categories from the data — scaled to your list
+  size — and asks about the borderline ones once; fine-tune with per-person
+  checkboxes and an Inverse-selection button.
 - **Test on yourself first**, then send with live progress and a saved
   per-contact report you can filter by sent/failed.
 - **Schedule for later** — fires even with the app closed (the Mac has to be on).
@@ -128,10 +131,15 @@ modify your sheet.
 ## Sending a campaign
 
 1. **Load contacts** — paste cells, or load your Sheet.
-2. **Choose recipients** — columns with a few repeating values (like `rank`,
-   `Status`) appear as **Send rules**: toggle the values you want and the
-   matching people are selected. Fine-tune with the checkboxes, *select all*,
-   or **Inverse selection** ("everyone except these few").
+2. **Choose recipients** — columns whose values repeat across people (like
+   `rank`, `Status`, `city`) appear as **Send rules**: toggle the values you
+   want and the matching people are selected. A column with up to 10 % as
+   many distinct values as you have contacts (at least 4) is a rule
+   automatically; one with up to 25 % (at least 8) gets a one-time question
+   — *send rule, or per-contact field?* — and your answer is remembered.
+   *columns…* lets you change any column's role later. Fine-tune with the
+   checkboxes, *select all*, or **Inverse selection** ("everyone except
+   these few").
 3. **Write the message** — type `{` for variable autocomplete, or click a
    `{{chip}}`. WhatsApp formatting works: `*bold*`, `_italic_`,
    `~strikethrough~`, `` `code` ``. The preview renders exactly what the

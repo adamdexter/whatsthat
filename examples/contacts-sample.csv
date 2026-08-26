@@ -1,15 +1,15 @@
-firstName,lastName,nickname,phone,email,rank,Status
-Ada,Lovelace,Ada,415-555-0134,ada@example.com,MM,Active
-Grace,Hopper,Grace,415-555-0142,grace@example.com,FC,Active
-Alan,Turing,Alan,+44 7700 900123,alan@example.com,EA,Active
-Katherine,Johnson,Kat,415-555-0107,katherine@example.com,MM,Active
-Linus,Torvalds,Linus,415-555-0188,linus@example.com,Prospect,Active
-Margaret,Hamilton,Maggie,415-555-0119,margaret@example.com,FC,Inactive
-Dennis,Ritchie,Dennis,415-555-0126,dennis@example.com,EA,Active
-Barbara,Liskov,Barb,415-555-0153,barbara@example.com,MM,Active
-Tim,Berners-Lee,Tim,415-555-0161,tim@example.com,Prospect,Active
-Radia,Perlman,Radia,415-555-0175,radia@example.com,FC,Active
-Ken,Thompson,Ken,415-555-0198,ken@example.com,EA,Inactive
-Hedy,Lamarr,Hedy,415-555-0199,hedy@example.com,MM,Active
-Guido,van Rossum,Guido,,guido@example.com,Prospect,Active
-Brendan,Eich,Brendan,415-555-0110,brendan@example.com,FC,Active
+firstName,lastName,nickname,phone,email,city,rank,Status
+Ada,Lovelace,Ada,415-555-0134,ada@example.com,Oakland,MM,Active
+Grace,Hopper,Grace,415-555-0142,grace@example.com,Berkeley,FC,Active
+Alan,Turing,Alan,+44 7700 900123,alan@example.com,Palo Alto,EA,Active
+Katherine,Johnson,Kat,415-555-0107,katherine@example.com,San Jose,MM,Active
+Linus,Torvalds,Linus,415-555-0188,linus@example.com,Sausalito,Prospect,Active
+Margaret,Hamilton,Maggie,415-555-0119,margaret@example.com,San Francisco,FC,Inactive
+Dennis,Ritchie,Dennis,415-555-0126,dennis@example.com,Oakland,EA,Active
+Barbara,Liskov,Barb,415-555-0153,barbara@example.com,Berkeley,MM,Active
+Tim,Berners-Lee,Tim,415-555-0161,tim@example.com,Palo Alto,Prospect,Active
+Radia,Perlman,Radia,415-555-0175,radia@example.com,San Jose,FC,Active
+Ken,Thompson,Ken,415-555-0198,ken@example.com,Sausalito,EA,Inactive
+Hedy,Lamarr,Hedy,415-555-0199,hedy@example.com,San Francisco,MM,Active
+Guido,van Rossum,Guido,,guido@example.com,Oakland,Prospect,Active
+Brendan,Eich,Brendan,415-555-0110,brendan@example.com,Berkeley,FC,Active

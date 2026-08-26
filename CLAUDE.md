@@ -49,15 +49,27 @@ Sheet. Single user (Adam), ~30–40 recipients, 6–8 campaigns/year.
   `src/history.js` stay for a future export), side-by-side layout toggle
   for wide windows (`body[data-layout=split]`, persisted as `draft.layout`);
   v1.15.0 = GitHub Actions (CI tests on push/PR; release build on `v*` tags
-  attaches dmg/zip), `examples/contacts-sample.csv`, README badges.
+  attaches dmg/zip), `examples/contacts-sample.csv`, README badges;
+  v1.16.0 = scale-aware send-rule detection for any custom column
+  (`public/columns.js`), ask-once for ambiguous columns, columns panel,
+  `draft.columnKinds`; sample CSV gains a `city` column.
 
 ## Feature map (v1.14.0)
 
 - **Contacts**: Google Sheet (OAuth, read-only scope) or pasted CSV/TSV; row 1
   headers, `phone` column required; E.164 normalization (bare 10-digit → +1).
-- **Send rules**: columns with ≤8 distinct repeating values (rank, Status)
-  become toggle chips that drive selection; persisted in the draft. Manual
-  per-contact checkboxes + an Inverse-selection button on the contact table.
+- **Send rules** (any column; v1.16.0 made the detection scale-aware):
+  `public/columns.js` `classifyColumns({headers, contacts, decisions})`
+  labels every non-phone column `filter` / `ask` / `field`: distinct
+  (case-insensitive, non-empty) values ≤ max(4, ceil(10% × N)) ⇒ filter;
+  ≤ max(8, ceil(25% × N)) and still repeating ⇒ ask; unique-per-person,
+  constant (no blanks to contrast), empty or beyond ⇒ field. The user's
+  answers live in `draft.columnKinds` ({header.lower: 'filter'|'field'})
+  and override the heuristic; the Contacts tab shows a one-time prompt for
+  `ask` columns and a *columns…* panel (every column, its reason, a Send
+  rule/Field segmented choice, "Reset to automatic"). Filter chips drive
+  selection; active filters persist as `draft.filters`. Manual per-contact
+  checkboxes + Inverse selection remain. Unit-tested in `test/columns.test.js`.
 - **Templates**: `{{variable}}` per column, case-insensitive; `{`-triggered
   autocomplete; strict rendering (empty/unknown variable ⇒ contact fails, never
   sends a broken message); preview renders WhatsApp markup (*bold*, _italic_,
