@@ -13,6 +13,7 @@ const S = {
   columnKinds: {}, // header (lowercase) -> 'filter' | 'field': the user's answers, persisted in the draft
   showColumnsPanel: false,
   hideUnselected: false, // contact table shows only selected rows (a view mode, persisted)
+  columnOrder: null, // header names in display order (drag the header row); null = sheet order, phone last
   previews: new Map(), // contact id -> { text, unknown, empty }
   previewId: null,
   contactsCache: null, // last loaded contact list, persisted for restore on restart
@@ -359,7 +360,9 @@ function renderFilters() {
             </div>`
           )
           .join('')}
-        <div class="row"><a href="#" id="columns-reset" class="filters-clear">Reset to automatic</a></div>
+        <div class="row"><a href="#" id="columns-reset" class="filters-clear">Reset to automatic</a>${
+          Array.isArray(S.columnOrder) && S.columnOrder.length ? '<a href="#" id="columns-reset-order" class="filters-clear">Reset column order</a>' : ''
+        }</div>
       </div>`
     : '';
   const anyActive = Object.values(S.filters).some((s) => s && s.size);
@@ -428,6 +431,16 @@ function renderFilters() {
       resetColumnDecisions();
     };
   }
+  const resetOrder = $('columns-reset-order');
+  if (resetOrder) {
+    resetOrder.onclick = (e) => {
+      e.preventDefault();
+      S.columnOrder = null;
+      renderFilters();
+      renderContacts();
+      saveDraft();
+    };
+  }
 }
 
 function renderContacts() {
@@ -438,22 +451,21 @@ function renderContacts() {
     return;
   }
   const headers = S.headers;
+  const columns = orderedColumns();
+  const isPhone = (h) => h.trim().toLowerCase() === 'phone';
   const hidden = S.hideUnselected ? S.contacts.filter((c) => !S.selected.has(c.id)).length : 0;
   const rows = S.contacts
     .filter((c) => !S.hideUnselected || S.selected.has(c.id))
     .map((c) => {
       const checked = S.selected.has(c.id) ? 'checked' : '';
       const disabled = c.phone ? '' : 'disabled';
-      const phoneCell = c.phone
-        ? `<td>${esc(c.phone)}</td>`
-        : `<td class="phone-bad" title="${esc(c.phoneError || '')}">✗ ${esc(c.phoneError || 'invalid')}</td>`;
-      const cells = headers
-        .filter((h) => h.toLowerCase() !== 'phone')
-        .map((h) => `<td>${esc(c.fields[h] || '')}</td>`)
-        .join('');
+      const cell = (h) => {
+        if (!isPhone(h)) return `<td>${esc(c.fields[h] || '')}</td>`;
+        return c.phone ? `<td>${esc(c.phone)}</td>` : `<td class="phone-bad" title="${esc(c.phoneError || '')}">✗ ${esc(c.phoneError || 'invalid')}</td>`;
+      };
       return `<tr class="${c.phone ? '' : 'invalid'}">
         <td><input type="checkbox" data-id="${c.id}" ${checked} ${disabled} /></td>
-        ${cells}${phoneCell}
+        ${columns.map(cell).join('')}
       </tr>`;
     })
     .join('');
@@ -468,8 +480,7 @@ function renderContacts() {
     <table>
       <thead><tr>
         <th><input type="checkbox" id="check-all" ${allSelected ? 'checked' : ''} /></th>
-        ${headers.filter((h) => h.toLowerCase() !== 'phone').map((h) => `<th>${esc(h)}</th>`).join('')}
-        <th>Phone</th>
+        ${columns.map((h) => `<th class="col-drag" draggable="true" data-col="${esc(h)}" title="Drag to reorder columns">${esc(isPhone(h) ? 'Phone' : h)}</th>`).join('')}
       </tr></thead>
       <tbody>${rows || (S.hideUnselected ? `<tr><td colspan="${headers.length + 1}" class="muted">Nothing selected — every row is hidden. Turn off "Hide unselected" or pick people with the send rules.</td></tr>` : '')}</tbody>
     </table>
@@ -486,6 +497,7 @@ function renderContacts() {
     renderContacts();
     saveDraft();
   };
+  wireColumnDrag(wrap);
 
   wrap.querySelectorAll('tbody input[type=checkbox]').forEach((cb) => {
     cb.onchange = () => {
@@ -508,6 +520,68 @@ function renderContacts() {
   };
   renderCountLine();
   renderRunButton();
+}
+
+// ---------- Column order (drag the header row) ----------
+// Display order for the table: the saved order, minus columns the current
+// sheet no longer has, plus any new columns at the end. Default is sheet
+// order with phone last.
+function orderedColumns() {
+  const isPhone = (h) => h.trim().toLowerCase() === 'phone';
+  const natural = [...S.headers.filter((h) => !isPhone(h)), ...S.headers.filter(isPhone)];
+  if (!Array.isArray(S.columnOrder) || !S.columnOrder.length) return natural;
+  const byKey = new Map(natural.map((h) => [h.trim().toLowerCase(), h]));
+  const seen = new Set();
+  const out = [];
+  for (const k of S.columnOrder) {
+    const h = byKey.get(String(k).trim().toLowerCase());
+    if (h && !seen.has(h)) {
+      out.push(h);
+      seen.add(h);
+    }
+  }
+  for (const h of natural) if (!seen.has(h)) out.push(h);
+  return out;
+}
+
+function wireColumnDrag(wrap) {
+  const ths = [...wrap.querySelectorAll('th.col-drag')];
+  let dragging = null;
+  const clearMarks = () => ths.forEach((t) => t.classList.remove('drop-before', 'drop-after'));
+  const side = (e, th) => (e.clientX < th.getBoundingClientRect().left + th.offsetWidth / 2 ? 'before' : 'after');
+  for (const th of ths) {
+    th.addEventListener('dragstart', (e) => {
+      dragging = th.dataset.col;
+      e.dataTransfer.effectAllowed = 'move';
+      e.dataTransfer.setData('text/plain', dragging); // some browsers need data for a drag to start
+      th.classList.add('dragging');
+    });
+    th.addEventListener('dragover', (e) => {
+      if (!dragging || th.dataset.col === dragging) return;
+      e.preventDefault();
+      e.dataTransfer.dropEffect = 'move';
+      clearMarks();
+      th.classList.add(side(e, th) === 'before' ? 'drop-before' : 'drop-after');
+    });
+    th.addEventListener('dragleave', () => th.classList.remove('drop-before', 'drop-after'));
+    th.addEventListener('drop', (e) => {
+      if (!dragging || th.dataset.col === dragging) return;
+      e.preventDefault();
+      e.stopPropagation(); // not a file drop for the card
+      const order = orderedColumns().filter((h) => h !== dragging);
+      const at = order.indexOf(th.dataset.col) + (side(e, th) === 'after' ? 1 : 0);
+      order.splice(at, 0, dragging);
+      S.columnOrder = order;
+      dragging = null;
+      renderContacts();
+      saveDraft();
+    });
+    th.addEventListener('dragend', () => {
+      dragging = null;
+      th.classList.remove('dragging');
+      clearMarks();
+    });
+  }
 }
 
 function renderCountLine() {
@@ -1096,6 +1170,7 @@ const saveDraft = debounce(() => {
       layout: S.layout,
       columnKinds: S.columnKinds,
       hideUnselected: S.hideUnselected,
+      columnOrder: S.columnOrder,
     },
   }).catch(() => {});
 }, 600);
@@ -1181,6 +1256,7 @@ async function boot() {
   if (d.filters && typeof d.filters === 'object') S.savedFilters = d.filters;
   if (d.columnKinds && typeof d.columnKinds === 'object') S.columnKinds = d.columnKinds;
   S.hideUnselected = d.hideUnselected === true;
+  S.columnOrder = Array.isArray(d.columnOrder) && d.columnOrder.length ? d.columnOrder : null;
 
   // Repopulate the contact list and selection exactly as they were before the
   // last shutdown (skipped after `npm start --fresh` — the draft is empty).
@@ -1363,6 +1439,7 @@ async function boot() {
     }
   });
   card.addEventListener('drop', (e) => {
+    if (![...(e.dataTransfer?.types || [])].includes('Files')) return; // a column being reordered, not a file
     e.preventDefault();
     dragDepth = 0;
     card.classList.remove('drop-target');

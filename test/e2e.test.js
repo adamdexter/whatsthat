@@ -193,6 +193,8 @@ test('the side-by-side layout choice persists in the draft', async () => {
   assert.equal((await api('/api/state')).data.draft.layout, 'tabs');
   await api('/api/draft', { method: 'POST', body: { hideUnselected: true } });
   assert.equal((await api('/api/state')).data.draft.hideUnselected, true, 'view mode persists too');
+  await api('/api/draft', { method: 'POST', body: { columnOrder: ['phone', 'firstName'] } });
+  assert.deepEqual((await api('/api/state')).data.draft.columnOrder, ['phone', 'firstName'], 'column order persists');
 });
 
 test('cross-origin POSTs are rejected', async () => {

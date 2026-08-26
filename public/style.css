@@ -104,7 +104,7 @@ header {
   user-select: none;
 }
 .header-inner {
-  max-width: 1000px; /* toolbar needs a little more room than the cards */
+  max-width: none; /* the toolbar spans the window, like a native titlebar */
   height: 100%;
   margin: 0 auto;
   padding: 0 20px;
@@ -168,7 +168,7 @@ body[data-view="setup"] #card-google,
 body[data-view="setup"] #card-data { display: block; }
 /* Contacts owns the viewport: the card is a column and the table takes
    whatever height is left, scrolling inside itself. */
-body[data-view="contacts"] main { overflow: hidden; }
+body[data-view="contacts"] main { overflow: hidden; max-width: none; } /* the list uses every pixel you give the window */
 body[data-view="contacts"] #card-contacts { display: flex; flex-direction: column; flex: 1; min-height: 0; }
 body[data-view="message"] #card-message,
 body[data-view="message"] #card-send { display: block; }
@@ -222,7 +222,7 @@ main .card { flex: none; }
    the toggle hides and the tabs come back — the setting is remembered. */
 @media (min-width: 1280px) {
   body[data-layout="split"]:not([data-view="setup"]) main {
-    max-width: 1900px;
+    max-width: none;
     display: grid;
     grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
     grid-template-rows: auto minmax(0, 1fr);
@@ -230,7 +230,6 @@ main .card { flex: none; }
     row-gap: 0;
     overflow: hidden;
   }
-  body[data-layout="split"]:not([data-view="setup"]) .header-inner { max-width: 1900px; }
   body[data-layout="split"]:not([data-view="setup"]) #boot-notice { grid-column: 1 / -1; }
   body[data-layout="split"]:not([data-view="setup"]) #boot-notice:not(.hidden) { margin-bottom: 16px; }
   body[data-layout="split"]:not([data-view="setup"]) #card-contacts {
@@ -540,6 +539,12 @@ th {
   z-index: 1;
 }
 tbody tr:hover td { background: var(--fill-quaternary); }
+/* Column reordering: headers are the drag handles */
+th.col-drag { cursor: grab; user-select: none; }
+th.col-drag:active { cursor: grabbing; }
+th.col-drag.dragging { opacity: 0.4; }
+th.col-drag.drop-before { box-shadow: inset 3px 0 0 var(--accent); }
+th.col-drag.drop-after { box-shadow: inset -3px 0 0 var(--accent); }
 tbody tr:last-child td { border-bottom: none; }
 tr.invalid td { color: var(--muted); }
 td.phone-bad { color: var(--danger); }

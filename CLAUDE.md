@@ -57,7 +57,10 @@ Sheet. Single user (Adam), ~30–40 recipients, 6–8 campaigns/year.
   pressed state, count line shows "· N hidden"; persisted as
   `draft.hideUnselected`);
   v1.18.0 = CSV file drag-and-drop onto the Contacts card + "Select file…"
-  picker (both fill the paste box and load).
+  picker (both fill the paste box and load);
+  v1.19.0 = Contacts view + toolbar use the full window width (no 920px cap
+  on that tab); column reordering by dragging header cells, persisted as
+  `draft.columnOrder` (checkbox column pinned, Phone movable).
 
 ## Feature map (v1.14.0)
 
@@ -83,6 +86,13 @@ Sheet. Single user (Adam), ~30–40 recipients, 6–8 campaigns/year.
   (`button.toggle` + `aria-pressed`, label never changes — state is the
   pressed look + "· N hidden" in the count line; unchecking a row while on
   removes it from view; empty-state row when nothing is selected).
+  **Column order**: `orderedColumns()` = saved `S.columnOrder` (case-
+  insensitive header keys; unknown entries dropped, new columns appended)
+  or sheet order with phone last; `th.col-drag[draggable]` are the only
+  drag handles (`wireColumnDrag`: before/after insertion mark by cursor
+  half, `stopPropagation` on drop so the card CSV-file handler — which now
+  also checks for a `Files` type — never fires). Persisted as
+  `draft.columnOrder`; "Reset column order" in the columns panel.
   Unit-tested in `test/columns.test.js`.
   `examples/*.csv` + `examples/README.md` are the documented scenarios
   (8/12/14/20/40/150 contacts); `README.md` "Custom fields & send rules" quotes

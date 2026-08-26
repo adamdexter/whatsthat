@@ -204,7 +204,10 @@ rules at 8, 12, 14, 40 and 150 people.
    *columns…* lets you change any column's role later. Fine-tune with the
    checkboxes, *select all*, or **Inverse selection** ("everyone except
    these few"); **Hide unselected** collapses the table to just the people
-   who'll get the message (the count line says how many are hidden).
+   who'll get the message (the count line says how many are hidden). The
+   table uses the full window width — stretch the window on a wide monitor
+   to see more — and you can **drag column headers** to reorder columns
+   (remembered; *columns…* → *Reset column order* puts them back).
 3. **Write the message** — type `{` for variable autocomplete, or click a
    `{{chip}}`. WhatsApp formatting works: `*bold*`, `_italic_`,
    `~strikethrough~`, `` `code` ``. The preview renders exactly what the
