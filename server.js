@@ -17,6 +17,7 @@ const { createScheduleStore, isAgentInstalled, agentSpec, ensureAgent, uninstall
 const { resolveDataDir, migrateData, readEngineInfo, writeEngineInfo, updateEngineInfo, removeEngineInfo, pidAlive } = require('./src/datadir');
 const { expectedBuildId } = require('./src/browser');
 const { installFileLog } = require('./src/log');
+const { createHistory } = require('./src/history');
 
 const VERSION = require('./package.json').version;
 // PORT=0 asks the OS for an ephemeral port (the app shell does this in
@@ -106,6 +107,7 @@ const scheduleStore = createScheduleStore(path.join(DATA_DIR, 'schedule.local.js
 let sheetsApi;
 const wa = createWhatsApp({ mock: MOCK, dataDir: DATA_DIR });
 const runner = createRunner({ wa, reportsDir: REPORTS_DIR });
+const history = createHistory(REPORTS_DIR);
 
 const app = express();
 
@@ -542,6 +544,11 @@ app.post('/api/whatsapp/reconnect', async (req, res) => {
 });
 
 // ---------- Reports ----------
+// Last successful send per phone, from the reports (see src/history.js).
+app.get('/api/history', (req, res) => {
+  res.json(history.get());
+});
+
 app.get('/api/reports', (req, res) => {
   let files = [];
   try {

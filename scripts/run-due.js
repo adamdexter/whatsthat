@@ -48,11 +48,17 @@ function candidatePorts() {
   return [...new Set(ports)];
 }
 
+// Only an engine serving THIS data dir may send for it — a WhatsThat that
+// happens to be on 3847 with another data dir (a dev/test instance next to
+// the real app, or vice versa) is not ours.
 async function findRunningApp() {
   for (const port of candidatePorts()) {
     try {
       const res = await fetch(`http://127.0.0.1:${port}/api/ping`, { signal: AbortSignal.timeout(2000) });
-      if (res.ok) return port;
+      if (!res.ok) continue;
+      const info = await res.json();
+      if (info.dataDir && path.resolve(info.dataDir) === path.resolve(DATA_DIR)) return port;
+      log(`WhatsThat on port ${port} serves a different data dir (${info.dataDir}) — ignoring it`);
     } catch {
       /* nothing on that port */
     }

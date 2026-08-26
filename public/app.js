@@ -16,6 +16,8 @@ const S = {
   running: false,
   progressCount: 0,
   totalToSend: 0,
+  reportFilter: { sent: true, failed: true, cancelled: true }, // which statuses the run list shows
+  history: {}, // phone -> { at, text, reportFile, count } — last successful send (from reports)
   schedule: [],
   lastTab: 'contacts', // persisted via the draft; Setup is never remembered
 };
@@ -189,8 +191,15 @@ function renderContactSources() {
   if (!csv || !sheet) return;
   const connected = Boolean(S.google && S.google.connected);
   const fromSheet = S.contactsCache && S.contactsCache.source === 'sheet';
-  csv.open = !connected || S.contactsCache?.source === 'csv';
-  sheet.open = connected || fromSheet;
+  if (S.contacts.length) {
+    // A list is loaded: fold the pickers away (the summaries stay clickable)
+    // so the table gets the height.
+    csv.open = false;
+    sheet.open = false;
+  } else {
+    csv.open = !connected || S.contactsCache?.source === 'csv';
+    sheet.open = connected || fromSheet;
+  }
   const btn = $('btn-load-sheet');
   btn.disabled = !connected;
   btn.title = connected ? '' : 'Connect Google in Setup (gear) first';
@@ -256,6 +265,7 @@ function setContacts(data, opts = {}) {
   renderContacts();
   renderChips();
   refreshPreviews();
+  renderContactSources(); // fold the pickers once a list is in
   if (!restore) saveDraft();
 }
 
@@ -372,7 +382,7 @@ function renderContacts() {
         .join('');
       return `<tr class="${c.phone ? '' : 'invalid'}">
         <td><input type="checkbox" data-id="${c.id}" ${checked} ${disabled} /></td>
-        ${cells}${phoneCell}
+        ${cells}${phoneCell}${lastSentCell(c)}
       </tr>`;
     })
     .join('');
@@ -387,6 +397,7 @@ function renderContacts() {
         <th><input type="checkbox" id="check-all" ${allSelected ? 'checked' : ''} /></th>
         ${headers.filter((h) => h.toLowerCase() !== 'phone').map((h) => `<th>${esc(h)}</th>`).join('')}
         <th>Phone</th>
+        <th title="Last message WhatsThat delivered to this number (from the send reports)">Last sent</th>
       </tr></thead>
       <tbody>${rows}</tbody>
     </table>
@@ -419,6 +430,33 @@ function renderContacts() {
   };
   renderCountLine();
   renderRunButton();
+}
+
+// "Last sent" = the most recent message WhatsThat delivered to this phone,
+// per the send reports (local; works for CSV contacts too). Hover shows
+// the whole message.
+const shortDate = (iso) => {
+  const d = new Date(iso);
+  const sameYear = d.getFullYear() === new Date().getFullYear();
+  return d.toLocaleDateString([], { month: 'short', day: 'numeric', ...(sameYear ? {} : { year: 'numeric' }) });
+};
+function lastSentCell(c) {
+  const h = c.phone ? S.history[c.phone] : null;
+  if (!h) return '<td class="last-sent"></td>';
+  const text = String(h.text || '').replace(/\s+/g, ' ').trim();
+  const preview = text.length > 44 ? `${text.slice(0, 44)}…` : text;
+  const tip = `${h.at ? new Date(h.at).toLocaleString() : ''}${h.count > 1 ? ` · ${h.count} messages so far` : ''}\n\n${text}`;
+  return `<td class="last-sent" title="${esc(tip)}"><span class="when">${h.at ? esc(shortDate(h.at)) : ''}</span>${esc(preview)}</td>`;
+}
+
+async function refreshHistory() {
+  try {
+    const { byPhone } = await api('/api/history');
+    S.history = byPhone || {};
+  } catch {
+    /* keep what we had */
+  }
+  if (S.contacts.length) renderContacts();
 }
 
 function renderCountLine() {
@@ -760,9 +798,12 @@ async function startRun() {
   // can arrive before the fetch resolves and must not be wiped.
   S.progressCount = 0;
   S.totalToSend = contacts.length;
+  S.reportFilter = { sent: true, failed: true, cancelled: true };
   $('run-report').classList.add('hidden');
   $('run-report').innerHTML = '';
   $('progress-list').innerHTML = '';
+  const stale = $('progress-empty');
+  if (stale) stale.remove();
   $('progress-bar').style.width = '0%';
   $('progress-label').textContent = `0 / ${contacts.length}`;
   $('btn-cancel').classList.remove('hidden');
@@ -907,6 +948,8 @@ function onRunProgress(e) {
   const icons = { sent: '✅', failed: '❌', cancelled: '⚠️' };
   const div = document.createElement('div');
   div.className = 'progress-item';
+  div.dataset.status = e.status;
+  div.hidden = S.reportFilter[e.status] === false;
   div.innerHTML = `<span class="st-${e.status}">${icons[e.status] || ''}</span>
     <span class="who">${esc(e.name)}</span>
     <span class="muted">${esc(e.phone || '')}</span>
@@ -922,12 +965,15 @@ function onRunDone(e) {
   $('btn-cancel').classList.add('hidden'); // nothing left to cancel
   const s = e.summary;
   const el = $('run-report');
+  const chip = (status, n, label) =>
+    `<button type="button" class="report-chip st-${status} ${S.reportFilter[status] === false ? 'off' : ''}" data-status="${status}"
+       title="Show or hide the ${label} contacts in the list above"><b>${n}</b> ${label}</button>`;
   el.innerHTML = `
     <h2>Run complete</h2>
     <div class="report-summary">
-      <span class="st-sent"><b>${s.sent}</b> sent</span>
-      <span class="st-failed"><b>${s.failed}</b> failed</span>
-      ${s.cancelled ? `<span class="st-cancelled"><b>${s.cancelled}</b> cancelled</span>` : ''}
+      ${chip('sent', s.sent, 'sent')}
+      ${chip('failed', s.failed, 'failed')}
+      ${s.cancelled ? chip('cancelled', s.cancelled, 'cancelled') : ''}
     </div>
     ${
       e.reportFile
@@ -938,7 +984,41 @@ function onRunDone(e) {
   el.classList.remove('hidden');
   const reveal = $('btn-show-report');
   if (reveal) reveal.onclick = () => api('/api/open-folder', { method: 'POST', body: { what: 'reports' } }).catch(() => {});
+  el.querySelectorAll('.report-chip').forEach((btn) => {
+    btn.onclick = () => {
+      const st = btn.dataset.status;
+      S.reportFilter[st] = S.reportFilter[st] === false;
+      applyReportFilter();
+    };
+  });
+  applyReportFilter();
+  refreshHistory(); // the "Last sent" column just changed
   renderRunButton();
+}
+
+// Hide/show list rows by status; grey the chips that are off; explain an
+// empty list rather than leaving a blank.
+function applyReportFilter() {
+  const list = $('progress-list');
+  let visible = 0;
+  list.querySelectorAll('.progress-item').forEach((row) => {
+    const on = S.reportFilter[row.dataset.status] !== false;
+    row.hidden = !on;
+    if (on) visible++;
+  });
+  document.querySelectorAll('.report-chip').forEach((btn) => btn.classList.toggle('off', S.reportFilter[btn.dataset.status] === false));
+  let empty = $('progress-empty');
+  const anyRows = list.querySelector('.progress-item');
+  if (anyRows && visible === 0) {
+    if (!empty) {
+      empty = document.createElement('div');
+      empty.id = 'progress-empty';
+      list.insertAdjacentElement('afterend', empty);
+    }
+    empty.textContent = 'No message status selected. Select the statuses below that you wish to display.';
+  } else if (empty) {
+    empty.remove();
+  }
 }
 
 // ---------- Draft persistence ----------
@@ -1028,6 +1108,11 @@ async function boot() {
   S.schedule = state.schedule || [];
   S.version = state.version;
   S.paths = state.paths || null;
+  try {
+    S.history = (await api('/api/history')).byPhone || {};
+  } catch {
+    S.history = {};
+  }
   sessionStorage.removeItem('wt-reloaded-401'); // authenticated fine — re-arm the stale-token reload
   if (state.version) $('app-version').textContent = `v${state.version}`;
 

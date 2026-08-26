@@ -169,6 +169,22 @@ test('state exposes lastRun after a completed run (SSE-drop recovery)', async ()
   assert.ok(data.lastRun.reportFile);
 });
 
+test('history indexes the last successful send per phone from the reports', async () => {
+  const { status, data } = await api('/api/history');
+  assert.equal(status, 200);
+  assert.ok(data.reports >= 1);
+  const sent = (await api('/api/mock/sent')).data.sent;
+  const phones = Object.keys(data.byPhone);
+  assert.ok(phones.length >= 1, 'at least one delivered contact indexed');
+  for (const phone of phones) {
+    const h = data.byPhone[phone];
+    assert.match(phone, /^\+\d+$/);
+    assert.ok(h.at && h.reportFile && h.count >= 1);
+    assert.ok(sent.some((m) => m.text === h.text), 'text is what the mock actually sent');
+  }
+  assert.equal(data.byPhone['+14155550199'], undefined, 'a not-on-WhatsApp number never appears');
+});
+
 test('cross-origin POSTs are rejected', async () => {
   const res = await fetch(`${BASE}/api/run/cancel`, {
     method: 'POST',

@@ -115,6 +115,11 @@ automatically becomes a template variable:
   sheet for you (asks separately for one-time write access; the app itself
   stays read-only).
 
+The contact table also shows **Last sent** — the date and a preview of the
+last message WhatsThat actually delivered to that number (hover for the
+whole text). It comes from the app's own send reports, so it works for
+pasted contacts too and never touches your Sheet.
+
 ## Sending a campaign
 
 1. **Load contacts** — paste your Sheet URL and click *Load from Sheet* (or
@@ -264,7 +269,7 @@ the menu-bar menu turns that off.
 ## Development
 
 ```bash
-npm test         # 127 unit + end-to-end tests (mock mode; no real sends)
+npm test         # 131 unit + end-to-end tests (mock mode; no real sends)
 npm run mock     # run the app against a fake WhatsApp client
 ```
 

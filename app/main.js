@@ -287,9 +287,9 @@ function restartEngine() {
 function createWindow() {
   win = new BrowserWindow({
     width: 1180,
-    height: 940,
+    height: 1040,
     minWidth: 720,
-    minHeight: 520,
+    minHeight: 600,
     title: 'WhatsThat',
     // Native chrome: frameless with inset traffic lights — the page's
     // toolbar header is the titlebar (drag region set in CSS).

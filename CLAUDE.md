@@ -37,9 +37,12 @@ Sheet. Single user (Adam), ~30–40 recipients, 6–8 campaigns/year.
   v1.11.0 = local API token + Host allowlist + OAuth state nonce +
   `/api/ping`, rotated engine log, CSV-first contacts, Data & reports card
   (reveal folders, Start fresh…), report reveal, `googleapis` →
-  `@googleapis/sheets` (−200 MB), docs restructure.
+  `@googleapis/sheets` (−200 MB), docs restructure;
+  v1.12.0 = viewport layout (page never scrolls; contact table takes the
+  remaining height), sent/failed chips filter the run list, "Last sent"
+  column from the send reports (`/api/history`).
 
-## Feature map (v1.11.0)
+## Feature map (v1.12.0)
 
 - **Contacts**: Google Sheet (OAuth, read-only scope) or pasted CSV/TSV; row 1
   headers, `phone` column required; E.164 normalization (bare 10-digit → +1).
@@ -226,13 +229,33 @@ Sheet. Single user (Adam), ~30–40 recipients, 6–8 campaigns/year.
   `--fresh`); the run report shows the absolute path + "Show in Finder";
   `/api/state.run {active,total,done,sent,failed,cancelled,startedAt}`
   (`runner.status()`).
+- **Layout** (v1.12.0): `html, body { height: 100% }`, body is a flex
+  column, `main` fills the rest (`overflow: auto` only as a safety valve on
+  the Message tab); on the Contacts tab `main` is `overflow: hidden`, the
+  card is a flex column and `#contacts-table-wrap` is `flex: 1; min-height: 0;
+  overflow: auto` — the table scrolls, the window never does, at any size.
+  The source pickers (`<details>`) fold once a list is loaded
+  (`renderContactSources` runs from `setContacts`). Shell window default
+  1180×1040, min 720×600. `#progress-list` caps at 40vh.
+- **Run report filter** (v1.12.0): the summary counts are
+  `button.report-chip[data-status]` toggles; `S.reportFilter` hides
+  `.progress-item[data-status]` rows, greys the chip (`.off`), and
+  `applyReportFilter()` shows "No message status selected…" when nothing is
+  visible. Reset on every new run.
+- **Last sent** (v1.12.0): `src/history.js` folds `reports/run-*.json` into
+  `{ byPhone: { '+1…': { at, text, reportFile, count } } }` — last
+  *successful* send per E.164 phone, later report wins, cached by dir
+  signature; `GET /api/history`. Local by design: the Google token is
+  read-only and CSV contacts have no sheet. The contact table's "Last sent"
+  cell shows date + 44-char preview, full message + count on hover;
+  refreshed after every `run_done`.
 - **Sheets client**: `src/sheets.js` uses `@googleapis/sheets` (same
   `auth.OAuth2`, same token file) — the 200 MB `googleapis` umbrella is a
   devDependency now, used only by `scripts/create-sheet.js`.
 
 ## Testing
 
-- `npm test` — 127 unit + e2e tests (server boots in mock mode; no real
+- `npm test` — 131 unit + e2e tests (server boots in mock mode; no real
   WhatsApp/Google). e2e uses `WHATSTHAT_TICK_MS=200` for fast scheduler ticks.
   Every spawned server gets `WHATSTHAT_API_TOKEN: TOKEN` and every raw
   `fetch` of `/api/*` sends `AUTH` (`test/helpers.js`); discovery polls
