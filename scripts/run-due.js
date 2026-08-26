@@ -24,7 +24,7 @@ const log = (msg) => console.log(`[${new Date().toISOString()}] ${msg}`);
 // node even prints a harmless codesign line on every start). Keep the tail.
 const LOG_MAX = 2 * 1024 * 1024;
 const LOG_KEEP = 256 * 1024;
-function trimLog(file = path.join(DATA_DIR, 'scheduler.log'), { max = LOG_MAX, keep = LOG_KEEP } = {}) {
+function trimLog(file = path.join(DATA_DIR, 'logs', 'scheduler.log'), { max = LOG_MAX, keep = LOG_KEEP } = {}) {
   try {
     const size = fs.statSync(file).size;
     if (size <= max) return false;
@@ -51,7 +51,7 @@ function candidatePorts() {
 async function findRunningApp() {
   for (const port of candidatePorts()) {
     try {
-      const res = await fetch(`http://127.0.0.1:${port}/api/state`, { signal: AbortSignal.timeout(2000) });
+      const res = await fetch(`http://127.0.0.1:${port}/api/ping`, { signal: AbortSignal.timeout(2000) });
       if (res.ok) return port;
     } catch {
       /* nothing on that port */
@@ -72,7 +72,11 @@ async function main() {
   if (appPort) {
     // The app owns the WhatsApp session — trigger it and let it send.
     log(`App is running on port ${appPort} — asking it to send`);
-    const res = await fetch(`http://127.0.0.1:${appPort}/api/schedule/run-due`, { method: 'POST' });
+    const token = readEngineInfo(DATA_DIR)?.token || process.env.WHATSTHAT_API_TOKEN;
+    const res = await fetch(`http://127.0.0.1:${appPort}/api/schedule/run-due`, {
+      method: 'POST',
+      headers: token ? { 'X-WhatsThat-Token': token } : {},
+    });
     const data = await res.json().catch(() => ({}));
     log(`App response: ${JSON.stringify(data)}`);
     return;

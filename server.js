@@ -2,6 +2,7 @@
 
 const path = require('path');
 const fs = require('fs');
+const crypto = require('crypto');
 const { execFile } = require('child_process');
 const express = require('express');
 
@@ -15,6 +16,7 @@ const { createWhatsApp } = require('./src/whatsapp');
 const { createScheduleStore, isAgentInstalled, agentSpec, ensureAgent, uninstallAgent, agentPaths } = require('./src/schedule');
 const { resolveDataDir, migrateData, readEngineInfo, writeEngineInfo, updateEngineInfo, removeEngineInfo, pidAlive } = require('./src/datadir');
 const { expectedBuildId } = require('./src/browser');
+const { installFileLog } = require('./src/log');
 
 const VERSION = require('./package.json').version;
 // PORT=0 asks the OS for an ephemeral port (the app shell does this in
@@ -30,6 +32,12 @@ const ROOT = __dirname;
 // app (and for terminal mode once a session lives there) — src/datadir.js.
 const { dir: DATA_DIR, source: DATA_DIR_SOURCE } = resolveDataDir({ rootDir: ROOT });
 const REPORTS_DIR = path.join(DATA_DIR, 'reports');
+const LOG_DIR = path.join(DATA_DIR, 'logs');
+// A Finder-launched app has no terminal: keep a rotated engine log.
+if (PACKAGED || process.env.WHATSTHAT_LOG_FILE) {
+  const { file } = installFileLog({ file: process.env.WHATSTHAT_LOG_FILE || path.join(LOG_DIR, 'engine.log') });
+  console.log(`Logging to ${file}`);
+}
 console.log(`Data directory: ${DATA_DIR} (${DATA_DIR_SOURCE})`);
 
 // One-time move of an older checkout's data (session, draft, tokens, reports)
@@ -71,10 +79,20 @@ const NO_AGENT = process.env.WHATSTHAT_NO_AGENT === '1' || MOCK;
 // set aside, not deleted, so one fresh boot is recoverable.
 const FRESH = process.argv.includes('--fresh') || process.env.npm_config_fresh === 'true';
 const DRAFT_FILE = path.join(DATA_DIR, 'draft.local.json');
-if (FRESH && fs.existsSync(DRAFT_FILE)) {
+function setDraftAside() {
+  if (!fs.existsSync(DRAFT_FILE)) return false;
   fs.renameSync(DRAFT_FILE, path.join(DATA_DIR, 'draft.backup.local.json'));
-  console.log('Fresh start: previous draft set aside as draft.backup.local.json');
+  return true;
 }
+if (FRESH && setDraftAside()) console.log('Fresh start: previous draft set aside as draft.backup.local.json');
+
+// Local API token. Every /api route except /api/ping and the OAuth callback
+// requires it — as the cookie set when the page loads, or an
+// X-WhatsThat-Token header (app shell, run-due.js, tests). With the Host
+// allowlist below this shuts out drive-by web pages and DNS rebinding; it is
+// not a defense against another process on this Mac (which can read the
+// token from engine.local.json anyway).
+const API_TOKEN = process.env.WHATSTHAT_API_TOKEN || crypto.randomBytes(24).toString('hex');
 
 const googleStore = new JsonStore(path.join(DATA_DIR, 'google.local.json'));
 const draftStore = new JsonStore(DRAFT_FILE);
@@ -90,21 +108,47 @@ const wa = createWhatsApp({ mock: MOCK, dataDir: DATA_DIR });
 const runner = createRunner({ wa, reportsDir: REPORTS_DIR });
 
 const app = express();
+
+// Host allowlist (all routes): a DNS-rebinding page reaches us with its own
+// hostname in Host — refuse anything that is not our loopback address.
+const ALLOWED_ORIGINS = new Set(); // populated at listen time (PORT=0 support)
+const ALLOWED_HOSTS = new Set();
+app.use((req, res, next) => {
+  if (ALLOWED_HOSTS.size && !ALLOWED_HOSTS.has(req.headers.host)) return res.status(403).json({ error: 'Unexpected Host header' });
+  next();
+});
 app.use(express.json({ limit: '4mb' }));
+// The page picks up its API token as an HttpOnly cookie when it loads.
+app.get(['/', '/index.html'], (req, res, next) => {
+  res.cookie('whatsthat_token', API_TOKEN, { httpOnly: true, sameSite: 'strict', path: '/' });
+  next();
+});
 app.use(express.static(path.join(ROOT, 'public')));
 
 const escapeHtml = (s) =>
   String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
-// Reject state-changing requests from other origins (a malicious web page
-// could otherwise fire POSTs at localhost). GET navigations (OAuth callback)
-// don't carry an Origin header, and same-origin fetches match.
-const ALLOWED_ORIGINS = new Set(); // populated at listen time (PORT=0 support)
+const cookieToken = (req) => {
+  const m = /(?:^|;\s*)whatsthat_token=([^;]+)/.exec(req.headers.cookie || '');
+  return m ? decodeURIComponent(m[1]) : null;
+};
+const tokenOk = (t) => typeof t === 'string' && t.length === API_TOKEN.length && crypto.timingSafeEqual(Buffer.from(t), Buffer.from(API_TOKEN));
+const TOKEN_EXEMPT = new Set(['/ping', '/google/callback']); // discovery; Google's top-level redirect carries no cookie
 app.use('/api', (req, res, next) => {
+  if (TOKEN_EXEMPT.has(req.path)) return next();
+  // Reject state-changing requests from other origins (a malicious web page
+  // could otherwise fire POSTs at localhost); same-origin fetches match.
   if (req.method !== 'GET' && req.headers.origin && !ALLOWED_ORIGINS.has(req.headers.origin)) {
     return res.status(403).json({ error: 'Cross-origin requests are not allowed' });
   }
+  if (!tokenOk(req.get('x-whatsthat-token') || cookieToken(req))) return res.status(401).json({ error: 'Missing or invalid API token' });
   next();
+});
+
+// Unauthenticated discovery: enough for a shell/run-due.js to know a
+// WhatsThat is here and where its data (and therefore token) lives.
+app.get('/api/ping', (req, res) => {
+  res.json({ version: VERSION, packaged: PACKAGED, mock: MOCK, dataDir: DATA_DIR, wa: { status: wa.getState().status } });
 });
 
 // ---------- Server-sent events ----------
@@ -145,6 +189,7 @@ app.get('/api/state', (req, res) => {
     google: sheetsApi.status(),
     draft: draftStore.read(),
     running: runner.isRunning(),
+    run: runner.status(),
     lastRun,
     schedule: scheduleStore.list(),
     pendingCount: scheduleStore.list().filter((c) => c.status === 'pending').length,
@@ -158,10 +203,35 @@ app.get('/api/state', (req, res) => {
       dataDir: DATA_DIR,
       reportsDir: REPORTS_DIR,
       authDir: path.join(DATA_DIR, '.wwebjs_auth'),
-      logDir: path.join(DATA_DIR, 'logs'),
+      logDir: LOG_DIR,
     },
     migration,
   });
+});
+
+// In-app equivalent of `npm start --fresh`: set the draft aside (kept as
+// draft.backup.local.json) so the next page load starts blank.
+app.post('/api/draft/reset', (req, res) => {
+  try {
+    res.json({ backedUp: setDraftAside() });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Reveal a data folder in Finder (the engine always runs on the Mac).
+const OPENABLE = { reports: () => REPORTS_DIR, data: () => DATA_DIR, logs: () => LOG_DIR };
+app.post('/api/open-folder', (req, res) => {
+  const pick = OPENABLE[(req.body || {}).what];
+  if (!pick) return res.status(400).json({ error: 'what must be reports, data, or logs' });
+  const dir = pick();
+  try {
+    fs.mkdirSync(dir, { recursive: true });
+    if (process.platform === 'darwin' && !MOCK) execFile('open', [dir]);
+    res.json({ ok: true, dir });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
 app.post('/api/draft', (req, res) => {
@@ -181,16 +251,26 @@ app.post('/api/google/credentials', (req, res) => {
   res.json(sheetsApi.status());
 });
 
-app.get('/api/google/connect', (req, res) => {
+// The page asks for the consent URL (authenticated) and opens it in the
+// user's browser — the app shell forwards window.open to the default
+// browser because Google refuses OAuth inside embedded browsers. A one-shot
+// `state` nonce ties the callback to that request (login-CSRF).
+let pendingOAuthState = null;
+app.get('/api/google/auth-url', (req, res) => {
   try {
-    res.redirect(sheetsApi.authUrl());
+    pendingOAuthState = crypto.randomBytes(16).toString('hex');
+    res.json({ url: sheetsApi.authUrl({ state: pendingOAuthState }) });
   } catch (err) {
-    res.status(400).send(err.message);
+    res.status(400).json({ error: err.message });
   }
 });
 
 app.get('/api/google/callback', async (req, res) => {
   try {
+    if (!pendingOAuthState || req.query.state !== pendingOAuthState) {
+      throw new Error('Unexpected OAuth callback (state mismatch) — start the connection from WhatsThat again');
+    }
+    pendingOAuthState = null;
     if (req.query.error) throw new Error(`Google returned: ${req.query.error}`);
     if (!req.query.code) throw new Error('No authorization code in callback');
     await sheetsApi.handleCallback(String(req.query.code));
@@ -512,6 +592,8 @@ const httpServer = app.listen(PORT, '127.0.0.1', async () => {
   const actualPort = addr.port;
   ALLOWED_ORIGINS.add(`http://localhost:${actualPort}`);
   ALLOWED_ORIGINS.add(`http://127.0.0.1:${actualPort}`);
+  ALLOWED_HOSTS.add(`localhost:${actualPort}`);
+  ALLOWED_HOSTS.add(`127.0.0.1:${actualPort}`);
   sheetsApi = createSheets({
     store: googleStore,
     redirectUri: `http://localhost:${actualPort}/api/google/callback`,
@@ -525,7 +607,7 @@ const httpServer = app.listen(PORT, '127.0.0.1', async () => {
   if (other && other.pid !== process.pid && other.port !== actualPort && pidAlive(other.pid)) {
     let answering = false;
     try {
-      answering = (await fetch(`http://127.0.0.1:${other.port}/api/state`, { signal: AbortSignal.timeout(2000) })).ok;
+      answering = (await fetch(`http://127.0.0.1:${other.port}/api/ping`, { signal: AbortSignal.timeout(2000) })).ok;
     } catch {
       /* stale file — the pid is something else now */
     }
@@ -544,6 +626,7 @@ const httpServer = app.listen(PORT, '127.0.0.1', async () => {
     startedAt: new Date().toISOString(),
     packaged: PACKAGED,
     mock: MOCK,
+    token: API_TOKEN,
   });
 
   listeningPort = actualPort;
@@ -569,7 +652,7 @@ httpServer.on('error', async (err) => {
   }
   let detail = 'The occupant did not answer like a WhatsThat instance — find it with the lsof command below.';
   try {
-    const res = await fetch(`http://127.0.0.1:${PORT}/api/state`, { signal: AbortSignal.timeout(2000) });
+    const res = await fetch(`http://127.0.0.1:${PORT}/api/ping`, { signal: AbortSignal.timeout(2000) });
     const s = await res.json();
     detail = `It is WhatsThat v${s.version} (WhatsApp: ${s.wa?.status ?? 'unknown'}). Use that instance, or quit it first.`;
   } catch {

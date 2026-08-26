@@ -10,6 +10,8 @@ const path = require('node:path');
 const fs = require('node:fs');
 const os = require('node:os');
 
+const { TOKEN, AUTH } = require('./helpers');
+
 const SERVER = path.join(__dirname, '..', 'server.js');
 
 function startServer(env) {
@@ -19,6 +21,7 @@ function startServer(env) {
       ...process.env,
       WHATSTHAT_MOCK: '1',
       WHATSTHAT_NO_OPEN: '1',
+      WHATSTHAT_API_TOKEN: TOKEN,
       WHATSTHAT_DATA_DIR: dataDir,
       ...env,
     },
@@ -55,7 +58,7 @@ test('PORT=0 binds an ephemeral port and announces it on stdout', async () => {
   try {
     const port = await waitForHandshake(server);
     assert.ok(port > 0 && port !== 3847, `got ephemeral port ${port}`);
-    const res = await fetch(`http://127.0.0.1:${port}/api/state`);
+    const res = await fetch(`http://127.0.0.1:${port}/api/state`, { headers: AUTH });
     assert.equal(res.status, 200);
     const state = await res.json();
     assert.ok(state.version, 'state served on the announced port');
@@ -78,7 +81,7 @@ test('WHATSTHAT_PACKAGED is exposed in state and pins the engine (mock still ski
   const server = startServer({ PORT: '3935', WHATSTHAT_PACKAGED: '1' });
   try {
     const port = await waitForHandshake(server);
-    const state = await (await fetch(`http://127.0.0.1:${port}/api/state`)).json();
+    const state = await (await fetch(`http://127.0.0.1:${port}/api/state`, { headers: AUTH })).json();
     assert.equal(state.packaged, true, 'packaged flag plumbed through to state');
     assert.equal(state.agentInstalled, true, 'agent path skipped in mock');
     assert.equal(state.agent.mode, 'none', 'mock never touches launchctl (PACKAGED alone no longer implies NO_AGENT)');
@@ -95,13 +98,15 @@ test('state reports the data dir, derived paths, and browser readiness', async (
   const server = startServer({ PORT: '3936' });
   try {
     const port = await waitForHandshake(server);
-    const state = await (await fetch(`http://127.0.0.1:${port}/api/state`)).json();
+    const state = await (await fetch(`http://127.0.0.1:${port}/api/state`, { headers: AUTH })).json();
     assert.equal(state.dataDir, server.dataDir);
     assert.equal(state.paths.reportsDir, path.join(server.dataDir, 'reports'));
     assert.equal(state.paths.authDir, path.join(server.dataDir, '.wwebjs_auth'));
     assert.equal(state.wa.browser.status, 'ready');
     assert.equal(state.wa.browser.source, 'mock');
     assert.equal(state.migration, null);
+    assert.deepEqual(state.run, { active: false, total: 0, done: 0, sent: 0, failed: 0, cancelled: 0, startedAt: null });
+    assert.equal(state.paths.logDir, path.join(server.dataDir, 'logs'));
     assert.equal(state.update.pinned, undefined, 'terminal mode keeps the real updater record');
   } finally {
     await stop(server);
@@ -148,7 +153,7 @@ test('WHATSTHAT_MIGRATE_FROM moves a checkout\'s data in on boot (once)', async 
   const server = startServer({ PORT: '3939', WHATSTHAT_MIGRATE_FROM: from });
   try {
     const port = await waitForHandshake(server);
-    const state = await (await fetch(`http://127.0.0.1:${port}/api/state`)).json();
+    const state = await (await fetch(`http://127.0.0.1:${port}/api/state`, { headers: AUTH })).json();
     assert.equal(state.migration.migrated, true);
     assert.deepEqual(state.migration.copied.sort(), ['.wwebjs_auth', 'draft.local.json']);
     assert.equal(state.draft.template, 'migrated {{firstName}}', 'the migrated draft is what the server serves');
@@ -160,7 +165,7 @@ test('WHATSTHAT_MIGRATE_FROM moves a checkout\'s data in on boot (once)', async 
   const again = startServer({ PORT: '3939', WHATSTHAT_MIGRATE_FROM: from, WHATSTHAT_DATA_DIR: server.dataDir });
   try {
     const port = await waitForHandshake(again);
-    const state = await (await fetch(`http://127.0.0.1:${port}/api/state`)).json();
+    const state = await (await fetch(`http://127.0.0.1:${port}/api/state`, { headers: AUTH })).json();
     assert.equal(state.migration, null, 'second boot is a no-op');
   } finally {
     await stop(again);

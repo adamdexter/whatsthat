@@ -12,6 +12,8 @@ const path = require('node:path');
 const fs = require('node:fs');
 const os = require('node:os');
 
+const { TOKEN, AUTH } = require('./helpers');
+
 const PORT = 3940;
 const BASE = `http://127.0.0.1:${PORT}`;
 const CONTACTS = [{ id: 1, fields: { firstName: 'Ada' }, phone: '+14155550134', phoneError: null }];
@@ -19,7 +21,7 @@ let server;
 
 async function api(p, opts = {}) {
   const res = await fetch(`${BASE}${p}`, {
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', ...AUTH },
     ...opts,
     body: opts.body ? JSON.stringify(opts.body) : undefined,
   });
@@ -41,7 +43,7 @@ async function waitFor(fn, timeoutMs = 10000, everyMs = 100) {
 
 function boot(port, dataDir, extraEnv = {}) {
   return spawn(process.execPath, [path.join(__dirname, '..', 'server.js')], {
-    env: { ...process.env, WHATSTHAT_MOCK: '1', PORT: String(port), WHATSTHAT_NO_OPEN: '1', WHATSTHAT_DATA_DIR: dataDir, WHATSTHAT_TICK_MS: '200', ...extraEnv },
+    env: { ...process.env, WHATSTHAT_MOCK: '1', PORT: String(port), WHATSTHAT_NO_OPEN: '1', WHATSTHAT_API_TOKEN: TOKEN, WHATSTHAT_DATA_DIR: dataDir, WHATSTHAT_TICK_MS: '200', ...extraEnv },
     stdio: 'ignore',
   });
 }
@@ -116,14 +118,14 @@ test('staleness housekeeping still runs while holding (a 7h-old campaign becomes
     // 200ms tick must mark this missed during that window.
     const c = await waitFor(async () => {
       try {
-        const st = (await (await fetch(`http://127.0.0.1:${port}/api/state`)).json()).schedule[0];
+        const st = (await (await fetch(`http://127.0.0.1:${port}/api/state`, { headers: AUTH })).json()).schedule[0];
         return st.status === 'missed' ? st : null;
       } catch {
         return null;
       }
     }, 8000);
     assert.match(c.error, /unavailable/);
-    const sent = await (await fetch(`http://127.0.0.1:${port}/api/mock/sent`)).json();
+    const sent = await (await fetch(`http://127.0.0.1:${port}/api/mock/sent`, { headers: AUTH })).json();
     assert.equal(sent.sent.length, 0, 'never sent');
   } finally {
     child.kill();

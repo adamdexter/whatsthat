@@ -1,6 +1,7 @@
 'use strict';
 
-const { google } = require('googleapis');
+// Only the Sheets API (not the 200 MB umbrella `googleapis` package).
+const { sheets: sheetsV4, auth: googleAuth } = require('@googleapis/sheets');
 
 const SCOPES = ['https://www.googleapis.com/auth/spreadsheets.readonly'];
 
@@ -20,7 +21,7 @@ function createSheets({ store, redirectUri }) {
   function getOAuthClient() {
     const cfg = store.read();
     if (!cfg.clientId || !cfg.clientSecret) return null;
-    const oauth2 = new google.auth.OAuth2(cfg.clientId, cfg.clientSecret, redirectUri);
+    const oauth2 = new googleAuth.OAuth2(cfg.clientId, cfg.clientSecret, redirectUri);
     if (cfg.tokens) oauth2.setCredentials(cfg.tokens);
     // Persist refreshed access tokens so reconnects aren't needed.
     oauth2.on('tokens', (tokens) => {
@@ -43,10 +44,11 @@ function createSheets({ store, redirectUri }) {
       store.patch({ clientId: String(clientId).trim(), clientSecret: String(clientSecret).trim(), tokens: null });
     },
 
-    authUrl() {
+    // `state` is the caller's one-shot nonce, echoed back on the callback.
+    authUrl({ state } = {}) {
       const oauth2 = getOAuthClient();
       if (!oauth2) throw new Error('Set your Google OAuth client ID and secret first');
-      return oauth2.generateAuthUrl({ access_type: 'offline', prompt: 'consent', scope: SCOPES });
+      return oauth2.generateAuthUrl({ access_type: 'offline', prompt: 'consent', scope: SCOPES, ...(state ? { state } : {}) });
     },
 
     async handleCallback(code) {
@@ -64,7 +66,7 @@ function createSheets({ store, redirectUri }) {
     async fetchValues(spreadsheetId, tabName) {
       const oauth2 = getOAuthClient();
       if (!oauth2 || !store.read().tokens) throw new Error('Google is not connected yet');
-      const sheets = google.sheets({ version: 'v4', auth: oauth2 });
+      const sheets = sheetsV4({ version: 'v4', auth: oauth2 });
 
       let tab = tabName && String(tabName).trim();
       if (!tab) {

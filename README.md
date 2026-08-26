@@ -55,6 +55,11 @@ It is an unsigned personal build: an app you built on this Mac opens
 normally; one copied from elsewhere gets blocked once — allow it under
 System Settings → Privacy & Security → "Open Anyway" (or
 `xattr -dr com.apple.quarantine /Applications/WhatsThat.app`).
+
+First run: the app downloads its private Chrome build (progress bar, ~160 MB,
+once), shows the WhatsApp QR to scan, then lands on **Contacts** — paste
+cells copied from any spreadsheet, or connect Google (Setup → gear) to load
+a Sheet directly. The menu-bar icon is where it lives from then on.
 Coming from an older checkout? `npm run migrate-data` copies your linked
 session, draft, Google token and reports into
 `~/Library/Application Support/WhatsThat` first (copy only — nothing is
@@ -187,21 +192,33 @@ schedule installs a small macOS background agent
 
 ## Your data
 
-Everything lives in the project folder, all gitignored:
+Everything stays on this Mac. The app keeps it all in
+`~/Library/Application Support/WhatsThat` (terminal mode uses the same folder
+once a session lives there; before that, the repo checkout):
 
-| Path                       | Contents                                       |
-|----------------------------|------------------------------------------------|
-| `.wwebjs_auth/`            | WhatsApp session — **treat like a password**   |
-| `google.local.json`        | Google OAuth credentials + read-only token     |
-| `draft.local.json`         | Message, sheet URL, selection, contact cache   |
-| `draft.backup.local.json`  | Previous draft, set aside by a `--fresh` start |
-| `schedule.local.json`      | Scheduled sends and their status               |
-| `update.local.json`        | What the launch-time auto-updater did          |
-| `reports/`                 | Per-run send reports                           |
-| `scheduler.log`            | Background scheduler output                    |
+| File / folder              | Contents                                                       |
+|----------------------------|----------------------------------------------------------------|
+| `.wwebjs_auth/`            | WhatsApp session — **treat like a password**                   |
+| `google.local.json`        | Google OAuth client + **read-only** token                      |
+| `draft.local.json`         | Your message, sheet URL, delays, send rules, loaded contacts, selection |
+| `draft.backup.local.json`  | The previous draft, set aside by "Start fresh…"                |
+| `schedule.local.json`      | Scheduled campaigns and what happened to them                  |
+| `reports/`                 | One JSON report per send (`run-<timestamp>.json`)             |
+| `chromium/`                | The private Chrome build WhatsApp Web runs in (downloaded once) |
+| `logs/`                    | `engine.log`, `shell.log`, `scheduler.log` (rotated)          |
+| `engine.local.json`        | Which process is serving this folder right now (pid, port, API token) |
+| `shell/`                   | The app window's own browser profile                           |
 
-Nothing ever leaves your machine except the WhatsApp messages themselves and
-read-only Google Sheets API calls.
+Setup (gear) → *Data & reports* has buttons to reveal the reports and logs
+folders in Finder, and *Start fresh…* to set the draft aside without touching
+the WhatsApp or Google connections. Your old checkout copies (if you ran the
+terminal version before the app) are left in place by the migration; delete
+them once you're happy.
+
+The local web API the window talks to is protected by a per-launch token
+(cookie for the page, header for the app's own tools) and a Host/Origin
+allowlist, so a web page you happen to have open cannot read your contacts
+or send messages through it.
 
 ## Honest limitations
 
@@ -247,7 +264,7 @@ the menu-bar menu turns that off.
 ## Development
 
 ```bash
-npm test         # 114 unit + end-to-end tests (mock mode; no real sends)
+npm test         # 127 unit + end-to-end tests (mock mode; no real sends)
 npm run mock     # run the app against a fake WhatsApp client
 ```
 

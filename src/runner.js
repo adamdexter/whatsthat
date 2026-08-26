@@ -11,8 +11,11 @@ const randBetween = (min, max) => Math.floor(min + Math.random() * (max - min + 
 // randomized delay between sends. One run at a time. Strict about data
 // problems — a contact with an unknown/empty variable or a bad phone number
 // is reported as failed rather than sent a broken message.
+const emptyStats = () => ({ active: false, total: 0, done: 0, sent: 0, failed: 0, cancelled: 0, startedAt: null });
+
 function createRunner({ wa, reportsDir }) {
   let current = null;
+  let stats = emptyStats();
 
   async function start({ contacts, template, delayMinMs = 4000, delayMaxMs = 10000, onProgress = () => {} }) {
     if (current) throw new Error('A run is already in progress');
@@ -24,6 +27,12 @@ function createRunner({ wa, reportsDir }) {
     current = run;
     const startedAt = new Date();
     const results = [];
+    stats = { active: true, total: contacts.length, done: 0, sent: 0, failed: 0, cancelled: 0, startedAt: startedAt.toISOString() };
+    const count = (entry) => {
+      results.push(entry);
+      stats.done++;
+      stats[entry.status]++;
+    };
 
     // The report is rewritten after every contact so that a crash or Ctrl-C
     // mid-run never loses the record of who was already messaged.
@@ -69,7 +78,7 @@ function createRunner({ wa, reportsDir }) {
 
         if (run.cancel) {
           const entry = { index: i, total: contacts.length, name, contact, status: 'cancelled' };
-          results.push(entry);
+          count(entry);
           writeReport('running');
           onProgress({ type: 'progress', ...entry });
           continue;
@@ -77,7 +86,7 @@ function createRunner({ wa, reportsDir }) {
 
         const report = (status, extra = {}) => {
           const entry = { index: i, total: contacts.length, name, contact, status, ...extra };
-          results.push(entry);
+          count(entry);
           writeReport('running');
           onProgress({ type: 'progress', ...entry });
         };
@@ -114,6 +123,7 @@ function createRunner({ wa, reportsDir }) {
       }
     } finally {
       current = null;
+      stats = { ...stats, active: false };
     }
 
     const summary = {
@@ -137,6 +147,7 @@ function createRunner({ wa, reportsDir }) {
       if (current) current.cancel = true;
     },
     isRunning: () => Boolean(current),
+    status: () => ({ ...stats }),
   };
 }
 

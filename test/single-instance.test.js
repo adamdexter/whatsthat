@@ -30,7 +30,7 @@ async function waitForServer(timeoutMs = 15000) {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
     try {
-      const res = await fetch(`http://127.0.0.1:${PORT}/api/state`);
+      const res = await fetch(`http://127.0.0.1:${PORT}/api/ping`);
       if (res.ok) return;
     } catch {
       /* not up yet */

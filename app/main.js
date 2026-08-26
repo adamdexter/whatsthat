@@ -19,6 +19,7 @@ const path = require('path');
 const fs = require('fs');
 const os = require('os');
 const net = require('net');
+const crypto = require('crypto');
 const { spawn } = require('child_process');
 const { app, BrowserWindow, Tray, Menu, dialog, nativeImage, nativeTheme, shell, Notification } = require('electron');
 
@@ -43,6 +44,7 @@ const HOLD_NOTIFY_AFTER_MS = 2 * 60 * 1000;
 const DATA_DIR_OVERRIDDEN = Boolean(process.env.WHATSTHAT_DATA_DIR);
 const DATA_DIR = process.env.WHATSTHAT_DATA_DIR || path.join(app.getPath('appData'), 'WhatsThat');
 const SHELL_DIR = path.join(DATA_DIR, 'shell');
+const LOG_DIR = path.join(DATA_DIR, 'logs');
 // The shell's own Chromium profile (window cache, cookies, prefs) lives in a
 // subfolder so it never mixes with the engine's files. Must precede the
 // single-instance lock, which is kept in userData.
@@ -62,14 +64,15 @@ let respawnTimer = null;
 const restarts = []; // timestamps of recent respawns
 let lastState = null;
 let launchedHidden = false;
+let apiToken = null; // generated for a spawned engine, read from engine.local.json for an attached one
 
 // ---------- shell log + prefs ----------
 function slog(msg) {
   const line = `[${new Date().toISOString()}] ${msg}`;
   console.log(line);
   try {
-    fs.mkdirSync(SHELL_DIR, { recursive: true });
-    fs.appendFileSync(path.join(SHELL_DIR, 'shell.log'), `${line}\n`);
+    fs.mkdirSync(LOG_DIR, { recursive: true });
+    fs.appendFileSync(path.join(LOG_DIR, 'shell.log'), `${line}\n`);
   } catch {
     /* logging must never break the shell */
   }
@@ -88,11 +91,24 @@ function writePrefs(patch) {
 }
 
 // ---------- engine discovery ----------
-const stateUrl = (port) => `http://127.0.0.1:${port}/api/state`;
+const authHeaders = () => (apiToken ? { 'X-WhatsThat-Token': apiToken } : {});
 
+// Unauthenticated: is a WhatsThat engine answering on this port?
+async function ping(port) {
+  try {
+    const res = await fetch(`http://127.0.0.1:${port}/api/ping`, { signal: AbortSignal.timeout(1500) });
+    if (!res.ok) return null;
+    const info = await res.json();
+    return info && info.version ? info : null;
+  } catch {
+    return null;
+  }
+}
+
+// Authenticated full state (tray, quit guard, notifications).
 async function probeExisting(port) {
   try {
-    const res = await fetch(stateUrl(port), { signal: AbortSignal.timeout(1500) });
+    const res = await fetch(`http://127.0.0.1:${port}/api/state`, { headers: authHeaders(), signal: AbortSignal.timeout(1500) });
     if (!res.ok) return null;
     const state = await res.json();
     return state && state.version ? state : null;
@@ -103,7 +119,11 @@ async function probeExisting(port) {
 
 async function post(pathname) {
   if (!serverPort) throw new Error('engine not running');
-  const res = await fetch(`http://127.0.0.1:${serverPort}${pathname}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
+  const res = await fetch(`http://127.0.0.1:${serverPort}${pathname}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...authHeaders() },
+    body: '{}',
+  });
   const data = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error(data.error || `${res.status}`);
   return data;
@@ -111,10 +131,18 @@ async function post(pathname) {
 
 // A running engine to attach to: the default port first, then whatever
 // engine.local.json says is serving our data dir (an ephemeral-port fallback).
+// Its token comes from that file (0600, same user).
 async function findExisting() {
-  if (await probeExisting(DEFAULT_PORT)) return DEFAULT_PORT;
   const info = readEngineInfo(DATA_DIR);
-  if (info && info.port !== DEFAULT_PORT && pidAlive(info.pid) && (await probeExisting(info.port))) return info.port;
+  const candidates = [DEFAULT_PORT, ...(info && info.port !== DEFAULT_PORT && pidAlive(info.pid) ? [info.port] : [])];
+  for (const port of candidates) {
+    const p = await ping(port);
+    if (!p) continue;
+    const owner = readEngineInfo(p.dataDir || DATA_DIR);
+    apiToken = (owner && owner.port === port && owner.token) || null;
+    if (!apiToken) slog(`attached engine on ${port} has no readable token — tray will be limited`);
+    return port;
+  }
   return null;
 }
 
@@ -130,6 +158,7 @@ function spawnEngine(port) {
   return new Promise((resolve, reject) => {
     fs.mkdirSync(DATA_DIR, { recursive: true });
     const script = PACKAGED ? path.join(ROOT, 'server.js') : path.join(ROOT, 'scripts', 'launch.js');
+    apiToken = process.env.WHATSTHAT_API_TOKEN || crypto.randomBytes(24).toString('hex');
     const child = spawn(process.execPath, [script], {
       cwd: DATA_DIR, // the engine's library writes cwd-relative caches
       env: {
@@ -137,6 +166,7 @@ function spawnEngine(port) {
         ELECTRON_RUN_AS_NODE: '1',
         WHATSTHAT_NO_OPEN: '1', // the shell owns the window
         WHATSTHAT_DATA_DIR: DATA_DIR,
+        WHATSTHAT_API_TOKEN: apiToken,
         PORT: String(port),
         ...(PACKAGED
           ? { WHATSTHAT_PACKAGED: '1' }
@@ -213,7 +243,7 @@ function scheduleRespawn(why) {
         defaultId: 0,
         cancelId: 0,
         message: 'The background engine keeps stopping',
-        detail: `It exited (${why}) ${restarts.length + 1} times in ${RESPAWN_WINDOW_MS / 60000} minutes. Restart it, or quit and check ${path.join(SHELL_DIR, 'shell.log')}.`,
+        detail: `It exited (${why}) ${restarts.length + 1} times in ${RESPAWN_WINDOW_MS / 60000} minutes. Restart it, or quit and check the logs in ${LOG_DIR}.`,
       })
       .then(({ response }) => {
         if (response === 0) restartEngine();
@@ -467,6 +497,13 @@ async function refreshTray() {
         if (!dir) return;
         fs.mkdirSync(dir, { recursive: true });
         shell.openPath(dir);
+      },
+    },
+    {
+      label: 'Show Logs',
+      click: () => {
+        fs.mkdirSync(LOG_DIR, { recursive: true });
+        shell.openPath(LOG_DIR);
       },
     },
     { type: 'separator' },

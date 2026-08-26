@@ -9,6 +9,8 @@ const path = require('node:path');
 const fs = require('node:fs');
 const os = require('node:os');
 
+const { TOKEN, AUTH } = require('./helpers');
+
 const PORT = 3931;
 const BASE = `http://127.0.0.1:${PORT}`;
 const DATA_DIR = fs.mkdtempSync(path.join(os.tmpdir(), 'whatsthat-e2e-'));
@@ -16,7 +18,7 @@ let server;
 
 async function api(p, opts = {}) {
   const res = await fetch(`${BASE}${p}`, {
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', ...AUTH },
     ...opts,
     body: opts.body ? JSON.stringify(opts.body) : undefined,
   });
@@ -41,6 +43,7 @@ before(async () => {
       WHATSTHAT_MOCK: '1',
       PORT: String(PORT),
       WHATSTHAT_NO_OPEN: '1',
+      WHATSTHAT_API_TOKEN: TOKEN,
       WHATSTHAT_DATA_DIR: DATA_DIR,
       WHATSTHAT_TICK_MS: '200', // fast in-app scheduler tick for the schedule test
     },
@@ -175,21 +178,22 @@ test('cross-origin POSTs are rejected', async () => {
   // Same-origin passes
   const ok = await fetch(`${BASE}/api/run/cancel`, {
     method: 'POST',
-    headers: { Origin: `http://127.0.0.1:${PORT}` },
+    headers: { Origin: `http://127.0.0.1:${PORT}`, ...AUTH },
   });
   assert.equal(ok.status, 200);
 });
 
 test('draft endpoint survives a body-less POST', async () => {
-  const res = await fetch(`${BASE}/api/draft`, { method: 'POST' });
+  const res = await fetch(`${BASE}/api/draft`, { method: 'POST', headers: AUTH });
   assert.equal(res.status, 200);
 });
 
-test('OAuth callback escapes error text (no reflected XSS)', async () => {
-  const res = await fetch(`${BASE}/api/google/callback?error=<script>alert(1)</script>`);
+test('OAuth callback without our state nonce is refused and reflects nothing', async () => {
+  const res = await fetch(`${BASE}/api/google/callback?error=<script>alert(1)</script>&state=forged`);
+  assert.equal(res.status, 400);
   const body = await res.text();
-  assert.ok(!body.includes('<script>alert(1)</script>'), 'script tag must be escaped');
-  assert.ok(body.includes('&lt;script&gt;'), 'escaped form present');
+  assert.ok(!body.includes('<script>alert(1)</script>'), 'input never reaches the page');
+  assert.match(body, /state mismatch/);
 });
 
 test('scheduled send: validates, fires via the in-app tick, reports done', async () => {

@@ -37,7 +37,7 @@
 
     <!-- 2. Google -->
     <section class="card" id="card-google">
-      <h2><span class="step">2</span> Google Sheets connection</h2>
+      <h2><span class="step">2</span> Google Sheets connection <span class="muted">(optional — pasted contacts need no Google)</span></h2>
       <div id="google-body"></div>
       <details id="google-help">
         <summary>How to get Google OAuth credentials (one-time, ~10 min)</summary>
@@ -52,19 +52,33 @@
       </details>
     </section>
 
+    <section class="card" id="card-data">
+      <h2><span class="step">3</span> Data &amp; reports</h2>
+      <p class="muted">Everything this app knows lives in <code id="data-dir-path">…</code> — the WhatsApp session, your draft, contacts, and one report per send.</p>
+      <div class="row">
+        <button id="btn-show-reports">Show Reports Folder</button>
+        <button id="btn-show-logs">Show Logs</button>
+        <button id="btn-fresh">Start fresh…</button>
+      </div>
+      <div id="fresh-confirm" class="confirm hidden"></div>
+    </section>
+
     <!-- Contacts tab -->
     <section class="card" id="card-contacts">
-      <div class="row">
-        <input type="text" id="sheet-url" placeholder="Paste your Google Sheet URL" />
-        <input type="text" id="tab-name" placeholder="Tab name (optional)" size="14" />
-        <button id="btn-load-sheet" class="primary">Load from Sheet</button>
-      </div>
-      <p class="muted">Row 1 must be headers and include a <code>phone</code> column. Every other column becomes a <code>{{variable}}</code>.</p>
-      <details>
-        <summary>…or paste CSV / cells copied from a spreadsheet instead</summary>
+      <details id="src-csv" open>
+        <summary>Paste contacts copied from a spreadsheet (CSV / cells)</summary>
         <textarea id="csv-text" rows="5" placeholder="firstName,lastName,nickname,phone&#10;Ada,Lovelace,Ada,415-555-0134"></textarea>
-        <button id="btn-load-csv">Load CSV</button>
+        <div class="row"><button id="btn-load-csv" class="primary">Load pasted contacts</button></div>
       </details>
+      <details id="src-sheet">
+        <summary>Load from a Google Sheet <span class="muted">(needs Google connected in Setup)</span></summary>
+        <div class="row">
+          <input type="text" id="sheet-url" placeholder="Paste your Google Sheet URL" />
+          <input type="text" id="tab-name" placeholder="Tab name (optional)" size="14" />
+          <button id="btn-load-sheet" class="primary">Load from Sheet</button>
+        </div>
+      </details>
+      <p class="muted">Row 1 must be headers and include a <code>phone</code> column. Every other column becomes a <code>{{variable}}</code>.</p>
       <div id="contacts-error" class="error hidden"></div>
       <div id="contacts-note" class="muted hidden"></div>
       <div id="contact-filters"></div>

@@ -161,3 +161,20 @@ test('validates inputs', async () => {
   await assert.rejects(() => runner.start({ contacts: [], template: 'x' }), /No contacts/);
   await assert.rejects(() => runner.start({ contacts: [makeContact(1, {}, '+14155550134')], template: '  ' }), /empty/);
 });
+
+test('status() reports live counters during a run and a settled snapshot after', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'whatsthat-runner-status-'));
+  const wa = stubWa({ failCheck: ['+14155550199'] });
+  const runner = createRunner({ wa, reportsDir: dir });
+  assert.deepEqual(runner.status(), { active: false, total: 0, done: 0, sent: 0, failed: 0, cancelled: 0, startedAt: null });
+  const contacts = [makeContact(1, { firstName: 'Ada' }, '+14155550134'), makeContact(2, { firstName: 'Bob' }, '+14155550199')];
+  const p = runner.start({ contacts, template: 'Hi {{firstName}}', delayMinMs: 1, delayMaxMs: 2 });
+  const live = runner.status();
+  assert.equal(live.active, true);
+  assert.equal(live.total, 2);
+  assert.ok(live.startedAt);
+  await p;
+  const after = runner.status();
+  assert.equal(after.active, false);
+  assert.deepEqual([after.done, after.sent, after.failed, after.cancelled], [2, 1, 1, 0]);
+});

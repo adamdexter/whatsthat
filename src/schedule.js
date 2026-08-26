@@ -128,7 +128,7 @@ function agentSpec({ rootDir, dataDir = rootDir, packaged = false, execPath = pr
   return {
     nodePath: packaged ? execPath : stableNodePath(),
     scriptPath: path.join(rootDir, 'scripts', 'run-due.js'),
-    logPath: path.join(dataDir, 'scheduler.log'),
+    logPath: path.join(dataDir, 'logs', 'scheduler.log'),
     env: {
       WHATSTHAT_DATA_DIR: dataDir,
       ...(port ? { PORT: String(port) } : {}),
@@ -164,6 +164,7 @@ function installAgent(spec, { exec = launchctl, plistPath } = {}) {
   if (!spec.scriptPath) spec = agentSpec(spec);
   const plist = plistPath || agentPaths().plist;
   fs.mkdirSync(path.dirname(plist), { recursive: true });
+  fs.mkdirSync(path.dirname(spec.logPath), { recursive: true }); // launchd will not create it
   fs.writeFileSync(plist, agentPlistXml(spec));
   const domain = `gui/${process.getuid()}`;
   try {

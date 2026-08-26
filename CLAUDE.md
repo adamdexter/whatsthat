@@ -33,9 +33,13 @@ Sheet. Single user (Adam), ~30–40 recipients, 6–8 campaigns/year.
   liveness probe, scheduler holds ("waiting for WhatsApp") + nudges, launchd
   fallback runs the .app's own binary with a self-repairing plist, shell
   engine auto-respawn, login item + hidden launch, quit guard, notifications,
-  richer tray.
+  richer tray;
+  v1.11.0 = local API token + Host allowlist + OAuth state nonce +
+  `/api/ping`, rotated engine log, CSV-first contacts, Data & reports card
+  (reveal folders, Start fresh…), report reveal, `googleapis` →
+  `@googleapis/sheets` (−200 MB), docs restructure.
 
-## Feature map (v1.10.0)
+## Feature map (v1.11.0)
 
 - **Contacts**: Google Sheet (OAuth, read-only scope) or pasted CSV/TSV; row 1
   headers, `phone` column required; E.164 normalization (bare 10-digit → +1).
@@ -192,12 +196,47 @@ Sheet. Single user (Adam), ~30–40 recipients, 6–8 campaigns/year.
   only seeds); tray glyph next to the template icon (`…` starting, `!`
   attention), rows for reconnecting/hold/engine state, Reconnect WhatsApp,
   Open Reports Folder, Start at Login, Remove Background Scheduler.
-  `shell/shell.log` records all of it.
+  `logs/shell.log` records all of it.
+- **Local API hardening** (v1.11.0). `API_TOKEN = WHATSTHAT_API_TOKEN ||
+  randomBytes(24)` per boot; `GET /` (and `/index.html`) sets it as an
+  `HttpOnly; SameSite=Strict` cookie; one `/api` middleware accepts the
+  cookie or an `X-WhatsThat-Token` header (timing-safe compare) and exempts
+  only `/api/ping` (unauthenticated discovery: version, packaged, mock,
+  dataDir, wa.status) and `/api/google/callback` (Google's top-level
+  redirect carries no cookie; it is guarded by a one-shot `state` nonce from
+  `GET /api/google/auth-url` instead — `/api/google/connect` is gone). A
+  Host allowlist (`localhost:<port>`, `127.0.0.1:<port>`) on ALL routes
+  defeats DNS rebinding; the Origin check on non-GET stays. The token is
+  written into `engine.local.json` (0600): the shell passes it to a spawned
+  engine via env and reads it from the file when attaching; `run-due.js`
+  reads it the same way. The page reloads once on a 401 (stale cookie after
+  an engine restart). Tests pin `WHATSTHAT_API_TOKEN=test-token`
+  (`test/helpers.js` `AUTH`). Threat model: drive-by web pages and DNS
+  rebinding — NOT another process on this Mac (it can read the file).
+- **Logs** (`src/log.js` `installFileLog`): in packaged mode (or with
+  `WHATSTHAT_LOG_FILE`) console output is teed into `<DATA_DIR>/logs/engine.log`
+  (5 MB, 2 rotations); the shell writes `logs/shell.log`; launchd writes
+  `logs/scheduler.log` (run-due trims it; `installAgent` creates the dir —
+  launchd will not). Tray "Show Logs" / Setup → Data & reports reveal it.
+- **UX** (v1.11.0): Contacts leads with pasted CSV (`#src-csv` open unless
+  Google is connected; `#btn-load-sheet` disabled with a hint until then —
+  `renderContactSources()`); Setup gains a "Data & reports" card (data
+  path, Show Reports Folder / Show Logs via `POST /api/open-folder
+  {what}`, "Start fresh…" via `POST /api/draft/reset` = the app's
+  `--fresh`); the run report shows the absolute path + "Show in Finder";
+  `/api/state.run {active,total,done,sent,failed,cancelled,startedAt}`
+  (`runner.status()`).
+- **Sheets client**: `src/sheets.js` uses `@googleapis/sheets` (same
+  `auth.OAuth2`, same token file) — the 200 MB `googleapis` umbrella is a
+  devDependency now, used only by `scripts/create-sheet.js`.
 
 ## Testing
 
-- `npm test` — 114 unit + e2e tests (server boots in mock mode; no real
+- `npm test` — 127 unit + e2e tests (server boots in mock mode; no real
   WhatsApp/Google). e2e uses `WHATSTHAT_TICK_MS=200` for fast scheduler ticks.
+  Every spawned server gets `WHATSTHAT_API_TOKEN: TOKEN` and every raw
+  `fetch` of `/api/*` sends `AUTH` (`test/helpers.js`); discovery polls
+  use `/api/ping`. `test/api-token.test.js` is the hardening matrix.
   `test/resilience.test.js` drives holds/reconnects through the mock hooks;
   `test/run-due.test.js` runs the real `scripts/run-due.js` against a mock
   engine (delegation, discovery, lock refusal).
@@ -272,7 +311,8 @@ Sheet. Single user (Adam), ~30–40 recipients, 6–8 campaigns/year.
 | `engine.local.json` | Occupant of this data dir: pid, port, version, chromePid (0600; removed on clean exit) |
 | `.migrated-from.json` | Marker written by the one-time data migration (what was copied, from where) |
 | `chromium/` | Chrome for Testing downloaded by `src/browser.js` when no cache copy exists |
-| `shell/` | The Electron shell's own profile (window cache/cookies) — never the engine's |
+| `shell/` | The Electron shell's own profile (window cache/cookies) + `shell.local.json` prefs — never the engine's |
+| `logs/` | `engine.log` (packaged), `shell.log`, `scheduler.log` |
 
 Two homes: the repo root (terminal mode, historically) and
 `~/Library/Application Support/WhatsThat` (the app, and terminal mode once a
@@ -319,6 +359,10 @@ session lives there — see `resolveDataDir`). The user's data was migrated
   set Electron's `runAsNode: false` fuse — the engine spawn depends on
   `ELECTRON_RUN_AS_NODE`. Keep `build.files` an allowlist and let
   `scripts/verify-build.js` prove nothing private shipped.
+- **Every `/api` route inherits the token middleware** — never register a
+  route above it in `server.js`, and never add to `TOKEN_EXEMPT` without a
+  reason as strong as the two it has. New probes/tools use `/api/ping` for
+  discovery and the token (from `engine.local.json`) for everything else.
 - **One instance per port, enforced**: the WhatsApp client starts only after
   `app.listen` succeeds — a second launch exits with a pointer to the running
   instance (never boots an invisible client). SIGINT/SIGTERM destroy the
@@ -364,10 +408,9 @@ native design system v1.7.0, **Phase B split into three increments**):
   WhatsApp drop/reconnect, the liveness probe catching a dead page, the
   quit-guard dialog, notifications, and a login-time hidden launch (needs
   the user to log out/in and glance at `shell/shell.log`).
-- **v1.11.0**: API hardening (Host check, token cookie/header, OAuth `state`
-  nonce, `/api/ping`), engine log file, CSV-first contacts, in-app draft
-  reset, reports reveal, `googleapis` → `@googleapis/sheets` (−200 MB),
-  README/CLAUDE.md restructure. No consent screen (deferred to Phase C).
+- **v1.11.0 (shipped 2026-08-25)**: API hardening, engine log, CSV-first
+  contacts, Data & reports card, report reveal, `@googleapis/sheets`, docs.
+  Phase B is complete. No consent screen (deferred to Phase C).
 - **Phase C (v2.0.0)**: signing/notarization (needs Adam's Apple Developer
   ID — his call), electron-updater + public GitHub Releases, LICENSE.
 

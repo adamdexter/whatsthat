@@ -84,13 +84,13 @@ test('agentSpec: packaged runs the app binary as node with the data dir spelled 
   const pk = agentSpec({ rootDir: '/App/Contents/Resources/app', dataDir: '/AS', packaged: true, execPath: '/App/Contents/MacOS/WhatsThat', env: {}, port: 3847 });
   assert.equal(pk.nodePath, '/App/Contents/MacOS/WhatsThat');
   assert.equal(pk.scriptPath, '/App/Contents/Resources/app/scripts/run-due.js');
-  assert.equal(pk.logPath, '/AS/scheduler.log');
+  assert.equal(pk.logPath, '/AS/logs/scheduler.log');
   assert.deepEqual(pk.env, { WHATSTHAT_DATA_DIR: '/AS', PORT: '3847', ELECTRON_RUN_AS_NODE: '1', WHATSTHAT_PACKAGED: '1' });
   const dev = agentSpec({ rootDir: '/repo', env: { WHATSTHAT_CHROME: '/x/chrome' } });
   assert.notEqual(dev.nodePath, '/App/Contents/MacOS/WhatsThat');
   assert.ok(!('ELECTRON_RUN_AS_NODE' in dev.env));
   assert.equal(dev.env.WHATSTHAT_CHROME, '/x/chrome');
-  assert.equal(dev.logPath, '/repo/scheduler.log');
+  assert.equal(dev.logPath, '/repo/logs/scheduler.log');
 });
 
 test('ensureAgent installs once, no-ops when unchanged, repairs when the spec moves', () => {
@@ -100,12 +100,14 @@ test('ensureAgent installs once, no-ops when unchanged, repairs when the spec mo
   const exec = (args) => calls.push(args[0]);
   let loaded = false;
   const installed = () => loaded;
-  const spec = agentSpec({ rootDir: '/repo-a', dataDir: '/data', env: {} });
+  const dataDir = path.join(dir, 'data');
+  const spec = agentSpec({ rootDir: '/repo-a', dataDir, env: {} });
 
   let r = ensureAgent(spec, { exec, plistPath, installed });
   assert.deepEqual(r, { installed: true, plist: plistPath, changed: true, repaired: false });
   assert.deepEqual(calls, ['bootout', 'bootstrap']);
   assert.ok(fs.existsSync(plistPath));
+  assert.ok(fs.existsSync(path.join(dataDir, 'logs')), 'log dir created for launchd (it will not create it)');
   loaded = true;
 
   calls.length = 0;
@@ -113,14 +115,14 @@ test('ensureAgent installs once, no-ops when unchanged, repairs when the spec mo
   assert.equal(r.changed, false);
   assert.deepEqual(calls, [], 'identical spec + loaded ⇒ launchctl untouched');
 
-  r = ensureAgent(agentSpec({ rootDir: '/repo-b', dataDir: '/data', env: {} }), { exec, plistPath, installed });
+  r = ensureAgent(agentSpec({ rootDir: '/repo-b', dataDir, env: {} }), { exec, plistPath, installed });
   assert.equal(r.repaired, true);
   assert.deepEqual(calls, ['bootout', 'bootstrap']);
   assert.ok(fs.readFileSync(plistPath, 'utf8').includes('/repo-b/scripts/run-due.js'));
 
   calls.length = 0;
   loaded = false;
-  r = ensureAgent(agentSpec({ rootDir: '/repo-b', dataDir: '/data', env: {} }), { exec, plistPath, installed });
+  r = ensureAgent(agentSpec({ rootDir: '/repo-b', dataDir, env: {} }), { exec, plistPath, installed });
   assert.equal(r.changed, true, 'same plist but not loaded ⇒ bootstrap again');
   assert.equal(r.repaired, false);
 

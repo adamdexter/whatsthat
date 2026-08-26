@@ -41,6 +41,14 @@ async function api(path, opts = {}) {
     body: opts.body ? JSON.stringify(opts.body) : undefined,
   });
   const data = await res.json().catch(() => ({}));
+  if (res.status === 401) {
+    // A tab left open across an engine restart holds a stale token cookie;
+    // one reload picks up the new one (guarded so a real 401 can't loop).
+    if (!sessionStorage.getItem('wt-reloaded-401')) {
+      sessionStorage.setItem('wt-reloaded-401', '1');
+      location.reload();
+    }
+  }
   if (!res.ok) throw new Error(data.error || `${res.status} ${res.statusText}`);
   return data;
 }
@@ -134,7 +142,14 @@ function renderGoogle() {
         <button id="btn-g-connect" class="primary">Connect Google</button>
         <button id="btn-g-reset">Change credentials</button>
       </div>`;
-    $('btn-g-connect').onclick = () => window.open('/api/google/connect', '_blank');
+    $('btn-g-connect').onclick = async () => {
+      try {
+        const { url } = await api('/api/google/auth-url');
+        window.open(url, '_blank'); // the app shell forwards this to the default browser
+      } catch (err) {
+        el.insertAdjacentHTML('beforeend', `<div class="error">${esc(err.message)}</div>`);
+      }
+    };
     $('btn-g-reset').onclick = () => {
       S.google.configured = false;
       renderGoogle();
@@ -163,6 +178,26 @@ function renderGoogle() {
     };
     $('google-help').classList.remove('hidden');
   }
+  renderContactSources();
+}
+
+// CSV-first: pasted contacts need no setup, so that source leads unless
+// Google is connected (then the sheet is the natural one).
+function renderContactSources() {
+  const csv = $('src-csv');
+  const sheet = $('src-sheet');
+  if (!csv || !sheet) return;
+  const connected = Boolean(S.google && S.google.connected);
+  const fromSheet = S.contactsCache && S.contactsCache.source === 'sheet';
+  csv.open = !connected || S.contactsCache?.source === 'csv';
+  sheet.open = connected || fromSheet;
+  const btn = $('btn-load-sheet');
+  btn.disabled = !connected;
+  btn.title = connected ? '' : 'Connect Google in Setup (gear) first';
+}
+
+function renderDataCard() {
+  if (S.paths && S.paths.dataDir) $('data-dir-path').textContent = S.paths.dataDir;
 }
 
 // ---------- Card 3: Contacts ----------
@@ -894,8 +929,15 @@ function onRunDone(e) {
       <span class="st-failed"><b>${s.failed}</b> failed</span>
       ${s.cancelled ? `<span class="st-cancelled"><b>${s.cancelled}</b> cancelled</span>` : ''}
     </div>
-    ${e.reportFile ? `<p class="muted">Full report saved to <code>reports/${esc(e.reportFile)}</code></p>` : ''}`;
+    ${
+      e.reportFile
+        ? `<p class="muted">Full report saved to <code>${esc(S.paths && S.paths.reportsDir ? `${S.paths.reportsDir}/${e.reportFile}` : `reports/${e.reportFile}`)}</code>
+           <button id="btn-show-report" class="small">Show in Finder</button></p>`
+        : ''
+    }`;
   el.classList.remove('hidden');
+  const reveal = $('btn-show-report');
+  if (reveal) reveal.onclick = () => api('/api/open-folder', { method: 'POST', body: { what: 'reports' } }).catch(() => {});
   renderRunButton();
 }
 
@@ -985,6 +1027,8 @@ async function boot() {
   S.running = state.running;
   S.schedule = state.schedule || [];
   S.version = state.version;
+  S.paths = state.paths || null;
+  sessionStorage.removeItem('wt-reloaded-401'); // authenticated fine — re-arm the stale-token reload
   if (state.version) $('app-version').textContent = `v${state.version}`;
 
   const d = state.draft || {};
@@ -1007,6 +1051,7 @@ async function boot() {
   renderPills();
   renderWa();
   renderGoogle();
+  renderDataCard();
   renderPreviewSelect();
   renderPreviewBubble();
   renderRunButton();
@@ -1122,6 +1167,23 @@ async function boot() {
   document.querySelectorAll('#tabs button').forEach((b) => {
     b.onclick = () => setView(b.dataset.view);
   });
+  $('btn-show-reports').onclick = () => api('/api/open-folder', { method: 'POST', body: { what: 'reports' } }).catch(() => {});
+  $('btn-show-logs').onclick = () => api('/api/open-folder', { method: 'POST', body: { what: 'logs' } }).catch(() => {});
+  $('btn-fresh').onclick = () => {
+    const box = $('fresh-confirm');
+    box.innerHTML = `<p>Start fresh? The message, loaded contacts and selection are set aside (kept as <code>draft.backup.local.json</code>); WhatsApp and Google stay connected.</p>
+      <div class="row"><button id="btn-fresh-yes" class="danger">Yes, start fresh</button><button id="btn-fresh-no">Cancel</button></div>`;
+    box.classList.remove('hidden');
+    $('btn-fresh-no').onclick = () => box.classList.add('hidden');
+    $('btn-fresh-yes').onclick = async () => {
+      try {
+        await api('/api/draft/reset', { method: 'POST' });
+        location.reload();
+      } catch (err) {
+        box.innerHTML = `<div class="error">${esc(err.message)}</div>`;
+      }
+    };
+  };
   $('btn-setup').onclick = () => openSetup(true);
   $('pill-wa').onclick = () => openSetup(true);
 

@@ -10,13 +10,15 @@ const path = require('node:path');
 const fs = require('node:fs');
 const os = require('node:os');
 
+const { TOKEN, AUTH } = require('./helpers');
+
 const PORT = 3932;
 const BASE = `http://127.0.0.1:${PORT}`;
 const SERVER = path.join(__dirname, '..', 'server.js');
 
 async function api(p, opts = {}) {
   const res = await fetch(`${BASE}${p}`, {
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', ...AUTH },
     ...opts,
     body: opts.body ? JSON.stringify(opts.body) : undefined,
   });
@@ -31,6 +33,7 @@ function startServer(dataDir, extraArgs = []) {
       WHATSTHAT_MOCK: '1',
       PORT: String(PORT),
       WHATSTHAT_NO_OPEN: '1',
+      WHATSTHAT_API_TOKEN: TOKEN,
       WHATSTHAT_DATA_DIR: dataDir,
       npm_config_fresh: '', // never inherit a --fresh from the test invocation
     },

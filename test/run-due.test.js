@@ -10,6 +10,8 @@ const path = require('node:path');
 const fs = require('node:fs');
 const os = require('node:os');
 
+const { TOKEN, AUTH } = require('./helpers');
+
 const ROOT = path.join(__dirname, '..');
 const RUN_DUE = path.join(ROOT, 'scripts', 'run-due.js');
 const CONTACTS = [{ id: 1, fields: { firstName: 'Ada' }, phone: '+14155550134', phoneError: null }];
@@ -37,13 +39,13 @@ async function waitFor(fn, timeoutMs = 15000, everyMs = 100) {
 function bootApp(port, dataDir) {
   const child = spawn(process.execPath, [path.join(ROOT, 'server.js')], {
     // A slow tick so the app does not send the campaign before run-due asks it to.
-    env: { ...process.env, WHATSTHAT_MOCK: '1', PORT: String(port), WHATSTHAT_NO_OPEN: '1', WHATSTHAT_DATA_DIR: dataDir, WHATSTHAT_TICK_MS: '60000' },
+    env: { ...process.env, WHATSTHAT_MOCK: '1', PORT: String(port), WHATSTHAT_NO_OPEN: '1', WHATSTHAT_API_TOKEN: TOKEN, WHATSTHAT_DATA_DIR: dataDir, WHATSTHAT_TICK_MS: '60000' },
     stdio: 'ignore',
   });
   const base = `http://127.0.0.1:${port}`;
   const ready = waitFor(async () => {
     try {
-      return (await (await fetch(`${base}/api/state`)).json()).wa.status === 'ready';
+      return (await (await fetch(`${base}/api/state`, { headers: AUTH })).json()).wa.status === 'ready';
     } catch {
       return false;
     }
@@ -67,7 +69,7 @@ test('delegates to the app on PORT, and finds it via engine.local.json when PORT
     assert.equal(viaPort.code, 0, viaPort.out);
     assert.match(viaPort.out, new RegExp(`App is running on port ${port} — asking it to send`));
     assert.match(viaPort.out, /"ran":true/);
-    const sent = await (await fetch(`${app.base}/api/mock/sent`)).json();
+    const sent = await (await fetch(`${app.base}/api/mock/sent`, { headers: AUTH })).json();
     assert.ok(sent.sent.some((m) => m.text === 'From run-due, Ada'), 'the APP sent it');
 
     fs.writeFileSync(path.join(dir, 'schedule.local.json'), JSON.stringify(dueCampaign()));
@@ -84,8 +86,8 @@ test('reports ran:false when the app is up but WhatsApp is not ready', async () 
   const app = bootApp(port, dir);
   try {
     await app.ready;
-    await fetch(`${app.base}/api/mock/disconnect`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ reason: 'LOGOUT' }) });
-    await waitFor(async () => (await (await fetch(`${app.base}/api/state`)).json()).wa.status === 'qr');
+    await fetch(`${app.base}/api/mock/disconnect`, { method: 'POST', headers: { 'Content-Type': 'application/json', ...AUTH }, body: JSON.stringify({ reason: 'LOGOUT' }) });
+    await waitFor(async () => (await (await fetch(`${app.base}/api/state`, { headers: AUTH })).json()).wa.status === 'qr');
     fs.writeFileSync(path.join(dir, 'schedule.local.json'), JSON.stringify(dueCampaign()));
     const r = await runDue({ WHATSTHAT_DATA_DIR: dir, PORT: String(port) });
     assert.equal(r.code, 0);

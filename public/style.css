@@ -155,7 +155,8 @@ h1 { font-size: 13px; font-weight: 600; margin: 0; letter-spacing: -0.01em; }
 /* View switching: each tab reveals its cards; the boot notice is global */
 main > .card { display: none; }
 body[data-view="setup"] #card-wa,
-body[data-view="setup"] #card-google { display: block; }
+body[data-view="setup"] #card-google,
+body[data-view="setup"] #card-data { display: block; }
 body[data-view="contacts"] #card-contacts { display: block; }
 body[data-view="message"] #card-message,
 body[data-view="message"] #card-send { display: block; }

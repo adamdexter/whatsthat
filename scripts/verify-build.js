@@ -27,7 +27,7 @@ if (!fs.existsSync(APP)) {
 for (const rel of ['server.js', 'app/main.js', 'scripts/run-due.js', 'public/index.html', 'src/whatsapp.js', 'src/datadir.js', 'src/browser.js', 'package.json']) {
   check(exists(rel), `bundled: ${rel}`);
 }
-for (const dep of ['whatsapp-web.js', 'puppeteer', 'puppeteer-core', '@puppeteer/browsers', 'express', 'googleapis', 'qrcode']) {
+for (const dep of ['whatsapp-web.js', 'puppeteer', 'puppeteer-core', '@puppeteer/browsers', 'express', '@googleapis/sheets', 'qrcode']) {
   check(exists(path.join('node_modules', dep, 'package.json')), `dependency: ${dep}`);
 }
 const utils = path.join(RES, 'node_modules', 'whatsapp-web.js', 'src', 'util', 'Injected', 'Utils.js');
@@ -35,7 +35,7 @@ check(fs.existsSync(utils) && fs.readFileSync(utils, 'utf8').includes('getAltern
 check(!exists('scripts/launch.js'), 'launch-time updater NOT bundled (engine is pinned)');
 
 // Nothing private or dev-only
-const forbidden = ['.wwebjs_auth', '.wwebjs_cache', 'reports', 'test', 'patches-retired', 'node_modules/electron', 'node_modules/electron-builder', 'node_modules/patch-package', '.git'];
+const forbidden = ['.wwebjs_auth', '.wwebjs_cache', 'reports', 'test', 'patches-retired', 'node_modules/electron', 'node_modules/electron-builder', 'node_modules/patch-package', 'node_modules/googleapis', '.git'];
 for (const rel of forbidden) check(!exists(rel), `absent: ${rel}`);
 const localJson = fs.readdirSync(RES).filter((f) => f.endsWith('.local.json'));
 check(localJson.length === 0, `no *.local.json at app root${localJson.length ? ` (found ${localJson.join(', ')})` : ''}`);
