@@ -192,6 +192,11 @@ That file is [`examples/team-offsite.csv`](examples/team-offsite.csv); the
 other scenarios in [`examples/README.md`](examples/README.md) show the same
 rules at 8, 12, 14, 40 and 150 people.
 
+Taking screenshots? Hover the **WhatsApp: Connected** capsule and click the
+eye-slash (or tick *Hide my number* in Setup → WhatsApp) — your own number
+disappears from the toolbar, from Setup and from the send confirmation until
+you switch it back. The setting is kept.
+
 ## Sending a campaign
 
 1. **Load contacts** — paste cells, or load your Sheet.

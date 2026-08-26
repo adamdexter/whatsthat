@@ -14,6 +14,7 @@ const S = {
   showColumnsPanel: false,
   hideUnselected: false, // contact table shows only selected rows (a view mode, persisted)
   columnOrder: null, // header names in display order (drag the header row); null = sheet order, phone last
+  hideNumber: false, // mask the user's own WhatsApp number everywhere in the UI (screenshots); persisted
   previews: new Map(), // contact id -> { text, unknown, empty }
   previewId: null,
   contactsCache: null, // last loaded contact list, persisted for restore on restart
@@ -60,21 +61,44 @@ async function api(path, opts = {}) {
 }
 
 // ---------- Header pills ----------
+// One switch masks the user's own number wherever it appears (pill, Setup
+// card, send/schedule confirmations) — for screenshots. Two doors: the eye
+// on the pill (in place) and a checkbox in the WhatsApp card (discoverable).
+const EYE_OFF = '<svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M2 2l12 12"/><path d="M6.7 6.8A2 2 0 0 0 9.2 9.3"/><path d="M4.2 4.4C2.7 5.4 1.7 6.7 1.2 8c1.2 2.9 3.8 4.8 6.8 4.8 1.1 0 2.2-.3 3.1-.8"/><path d="M6.2 3.4C6.8 3.3 7.4 3.2 8 3.2c3 0 5.6 1.9 6.8 4.8-.4 1-1.1 2-1.9 2.7"/></svg>';
+const selfNumber = () => (S.hideNumber ? null : S.wa.self?.number || null);
+function setHideNumber(on) {
+  S.hideNumber = Boolean(on);
+  renderPills();
+  renderWa();
+  saveDraft();
+}
 function renderPills() {
   const waPill = $('pill-wa');
   const map = {
     starting: ['Starting…', 'warn'],
     qr: ['Scan QR', 'warn'],
     authenticating: ['Authenticating…', 'warn'],
-    ready: [`Connected ${S.wa.self ? esc(S.wa.self.number) : ''}`, 'ok'],
+    ready: ['Connected', 'ok'],
     disconnected: ['Disconnected', 'err'],
     error: ['Error', 'err'],
   };
   const br = S.wa.browser;
   const downloading = br && br.status === 'downloading' && S.wa.status !== 'ready';
   const [label, cls] = downloading ? [`Downloading browser ${Number(br.percent) || 0}%`, 'warn'] : map[S.wa.status] || [S.wa.status, 'warn'];
-  waPill.textContent = `WhatsApp: ${label}`;
-  waPill.className = `pill ${cls}`;
+  const connected = S.wa.status === 'ready' && S.wa.self;
+  waPill.innerHTML = `WhatsApp: ${esc(label)}${
+    connected
+      ? `${S.hideNumber ? '' : ` <span class="num">${esc(S.wa.self.number)}</span>`}<button type="button" class="eye" id="btn-hide-number" title="${S.hideNumber ? 'Show my number' : 'Hide my number (for screenshots)'}" aria-pressed="${S.hideNumber}">${EYE_OFF}</button>`
+      : ''
+  }`;
+  waPill.className = `pill ${cls}${S.hideNumber ? ' masked' : ''}`;
+  const eye = $('btn-hide-number');
+  if (eye) {
+    eye.onclick = (e) => {
+      e.stopPropagation(); // the pill itself opens Setup
+      setHideNumber(!S.hideNumber);
+    };
+  }
 
   const gPill = $('pill-google');
   const gState = S.google.connected ? ['Connected', 'ok'] : S.google.configured ? ['Not connected', 'warn'] : ['Not set up', 'warn'];
@@ -113,9 +137,13 @@ function renderWa() {
     el.innerHTML = `
       <div class="status-line">
         <span class="dot ok"></span>
-        Connected as <b>${esc(st.self?.number || '')}</b>${st.self?.name ? ` (${esc(st.self.name)})` : ''}
+        Connected as <b>${S.hideNumber ? '(number hidden)' : esc(st.self?.number || '')}</b>${st.self?.name ? ` (${esc(st.self.name)})` : ''}
         — messages will be sent from this number.
+        <label class="inline-check" title="Masks your number in the toolbar, here, and in the send confirmation — for screenshots">
+          <input type="checkbox" id="chk-hide-number" ${S.hideNumber ? 'checked' : ''} /> Hide my number
+        </label>
       </div>`;
+    $('chk-hide-number').onchange = (e) => setHideNumber(e.target.checked);
   } else if (st.status === 'starting' || st.status === 'authenticating') {
     el.innerHTML = `<div class="status-line"><span class="dot warn"></span> ${
       st.status === 'starting' ? 'Starting WhatsApp client… (first launch can take ~30s)' : 'Authenticating…'
@@ -902,7 +930,7 @@ function showRunConfirm() {
   const { delayMinMs, delayMaxMs } = getDelaysMs();
   const etaSec = Math.round((n * (delayMinMs + delayMaxMs)) / 2 / 1000);
   const eta = etaSec > 90 ? `~${Math.round(etaSec / 60)} minutes` : `~${etaSec} seconds`;
-  const from = S.wa.self?.number || 'your number';
+  const from = selfNumber() || 'your number';
   const el = $('run-confirm');
   el.innerHTML = `
     <b>Ready to send?</b>
@@ -972,7 +1000,7 @@ function relTime(ms) {
 function showScheduleForm() {
   $('run-confirm').classList.add('hidden');
   const n = S.selected.size;
-  const from = S.wa.self?.number || 'your number';
+  const from = selfNumber() || 'your number';
   const def = new Date(Date.now() + 3600000);
   def.setMinutes(0, 0, 0);
   const el = $('schedule-form');
@@ -1171,6 +1199,7 @@ const saveDraft = debounce(() => {
       columnKinds: S.columnKinds,
       hideUnselected: S.hideUnselected,
       columnOrder: S.columnOrder,
+      hideNumber: S.hideNumber,
     },
   }).catch(() => {});
 }, 600);
@@ -1257,6 +1286,7 @@ async function boot() {
   if (d.columnKinds && typeof d.columnKinds === 'object') S.columnKinds = d.columnKinds;
   S.hideUnselected = d.hideUnselected === true;
   S.columnOrder = Array.isArray(d.columnOrder) && d.columnOrder.length ? d.columnOrder : null;
+  S.hideNumber = d.hideNumber === true;
 
   // Repopulate the contact list and selection exactly as they were before the
   // last shutdown (skipped after `npm start --fresh` — the draft is empty).

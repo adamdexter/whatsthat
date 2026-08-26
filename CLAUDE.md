@@ -60,7 +60,11 @@ Sheet. Single user (Adam), ~30–40 recipients, 6–8 campaigns/year.
   picker (both fill the paste box and load);
   v1.19.0 = Contacts view + toolbar use the full window width (no 920px cap
   on that tab); column reordering by dragging header cells, persisted as
-  `draft.columnOrder` (checkbox column pinned, Phone movable).
+  `draft.columnOrder` (checkbox column pinned, Phone movable);
+  v1.20.0 = hide-my-number: eye-slash on the WhatsApp pill (hover-revealed,
+  persistent while masked) + "Hide my number" checkbox in the WhatsApp card;
+  one `S.hideNumber` masks pill, Setup line and send/schedule confirmations;
+  persisted as `draft.hideNumber`.
 
 ## Feature map (v1.14.0)
 

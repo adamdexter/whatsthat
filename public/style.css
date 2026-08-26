@@ -176,6 +176,16 @@ body[data-view="message"] #card-send { display: block; }
 /* Status capsules: neutral fill + colored dot, like native status items */
 .pills { display: flex; gap: 6px; flex-wrap: nowrap; align-items: center; -webkit-app-region: no-drag; }
 .pill.clickable { cursor: pointer; }
+/* Hide-my-number eye inside the WhatsApp pill: appears on hover, stays while masked */
+.pill .eye {
+  display: inline-flex; align-items: center; margin-left: 4px; padding: 0 2px; min-height: 0;
+  border: 0; box-shadow: none; background: transparent; color: inherit; opacity: 0; cursor: pointer;
+  transition: opacity 0.15s ease;
+}
+.pill:hover .eye, .pill.masked .eye { opacity: 0.75; }
+.pill .eye:hover { opacity: 1; }
+.pill .num { font-variant-numeric: tabular-nums; }
+.inline-check { display: inline-flex; align-items: center; gap: 6px; margin-left: 14px; font-size: 12.5px; color: var(--muted); cursor: pointer; }
 .pill.clickable:hover { background: var(--fill-tertiary); }
 .pill {
   display: inline-flex;
