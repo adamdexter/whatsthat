@@ -68,7 +68,7 @@ Sheet. Single user (Adam), ~30–40 recipients, 6–8 campaigns/year.
   v1.20.1 = contact count line moved above the header row (under the
   toolbar, with its own rule).
 
-## Feature map (v1.14.0)
+## Feature map (v1.20.1)
 
 - **Contacts**: Google Sheet (OAuth, read-only scope) or pasted CSV/TSV; row 1
   headers, `phone` column required; E.164 normalization (bare 10-digit → +1).
@@ -489,56 +489,60 @@ session lives there — see `resolveDataDir`). The user's data was migrated
   back from `patches-retired/` to `patches/` and
   `npm install whatsapp-web.js@<previous>` (version in `update.local.json`).
 
-## Status & outstanding (as of 2026-08-25, v1.9.0)
+## Status & outstanding (as of 2026-08-26, v1.20.1)
+
+**State of play.** Public repo at github.com/adamdexter/whatsthat (history
+scrubbed of contact data before publishing — see "Author's setup"). CI runs
+the suite on every push; every `v*` tag is built on GitHub's runner and
+published as a Release with dmg + zip; `npm run install-app` then puts it in
+/Applications (standing rule: do this after every shipped change).
+Installed and running on the author's Mac: **v1.20.1**, connected.
 
 **Live-proven**: link, connect (self-healing against WA Web's mid-launch
-build swaps), repeated test-sends, a **full campaign run to real contacts**,
-and a **real scheduled send fired by launchd with the app closed** (both
-confirmed by the user 2026-08-25). The ship gate is satisfied. v1.9.0's
-packaged `WhatsThat.app` was verified live the same day: Finder launch,
-session restored from Application Support without a QR, test-send-to-self,
-clean quit (no Chrome/engine survivors, lock + occupancy file removed), and
-the Chromium download path against a blank data dir.
+build swaps), repeated test-sends, a **full campaign to real contacts**, a
+**launchd-driven scheduled send with the app closed**, a **campaign from
+the packaged app**, the migration to Application Support (no QR), the
+Chromium download path, login-item enrolment, `--hidden` launch, launchd
+fallback running the .app binary as node (throwaway job), plist self-repair
+after a terminal run re-pointed it, engine auto-respawn (dev), token
+enforcement + a real Sheet read via `@googleapis/sheets`.
 
-Mac-app roadmap (Electron plan approved 2026-07-26; Phase A shipped v1.6.0,
-native design system v1.7.0, **Phase B split into three increments**):
-- **v1.9.0 (shipped)**: electron-builder packaging, data in Application
-  Support + one-time migration, Chromium via @puppeteer/browsers, engine
-  pinned per release, app icon. Unsigned personal build.
-- **v1.10.0 (shipped 2026-08-25)**: resident-scheduling resilience (see the
-  feature map). Live-verified on the packaged app: login item enrolled
-  (`enabled`, no approval prompt on this Mac), `--hidden` launch has no
-  window, launchd fallback plist installed pointing at the .app binary and
-  loaded, engine auto-respawn (dev). **Not yet exercised live**: a real
-  WhatsApp drop/reconnect, the liveness probe catching a dead page, the
-  quit-guard dialog, notifications, and a login-time hidden launch (needs
-  the user to log out/in and glance at `shell/shell.log`).
-- **v1.11.0 (shipped 2026-08-25)**: API hardening, engine log, CSV-first
-  contacts, Data & reports card, report reveal, `@googleapis/sheets`, docs.
-  Phase B is complete. No consent screen (deferred to Phase C).
+**Never yet exercised live**: a real WhatsApp drop → auto-reconnect, the
+liveness probe catching a dead page, the quit-guard dialog, notifications,
+a login-time hidden launch (log out/in and read `logs/shell.log`), the
+terminal-mode auto-updater installing a real newer release, the watchdog
+relaunch against a real wedge.
+
+Roadmap:
+- **Phase B (v1.9.0–v1.11.0)**: complete. Since then: layout, report
+  filter, send rules for any custom column (scale-aware + ask-once), split
+  layout, hide-unselected, drag-drop CSV + file picker, full-width contact
+  list + column reordering, hide-my-number, example lists (8–150 contacts),
+  CI/CD, README with a screenshot tour.
 - **Phase C (v2.0.0)**: signing/notarization (needs Adam's Apple Developer
-  ID — his call), electron-updater, LICENSE (still undecided — README says
-  "all rights reserved until then"). GitHub Releases with a DMG exist since
-  v1.13.0 (`gh release create v<x> dist/*.dmg dist/*.zip`).
+  ID — his call; until then installs need Privacy & Security → Open Anyway),
+  electron-updater, **LICENSE (undecided — README says all rights reserved
+  until then; MIT suggested)**, consent screen for other users.
 
-Outstanding / watchlist:
+Watchlist:
 - **Upstream release watch**: when whatsapp-web.js ships > 1.34.7, the
   terminal-mode auto-updater installs it and retires our patch to
-  `patches-retired/`. If sends then break, follow "Auto-update recovery"
-  above. The packaged app is unaffected until rebuilt (engine pinned). Track
-  the LID/PN work upstream (PRs #201839/#201850/#201853, issues #201849/#201857).
-- **Auto-updater's real-install path** has only run against fakes.
-- **Watchdog relaunch / auto-reconnect / liveness probe** have never fired
-  against a real wedge or drop. The launchd agent IS now installed on this
-  Mac (packaged spec) and ticks every 2 min.
+  `patches-retired/`; if sends break, follow "Auto-update recovery" above.
+  The packaged app is unaffected until rebuilt (engine pinned). Track the
+  LID/PN work upstream (PRs #201839/#201850/#201853, issues #201849/#201857).
+- The launchd agent IS installed on this Mac (packaged spec, ticks every 2
+  min; Electron logs a harmless codesign line each tick, run-due trims it).
 - The repo checkout still holds the pre-migration copies of `.wwebjs_auth/`,
-  `draft.local.json`, `google.local.json`, `reports/` (left in place by
-  design). Safe to delete once the user is happy with the app.
+  `draft.local.json`, `google.local.json`, `reports/` (gitignored; left in
+  place by design). Safe to delete once the user is happy with the app.
 - Never clarified: the user once asked for autocomplete "as well as a…" —
   the second half never arrived; ask if it comes up.
 - Deferred idea: import contacts from the Google Workspace Directory
   (People API `people.listDirectoryPeople`, `directory.readonly`) — needs
   admin-enabled sharing; directory profiles often lack mobile numbers.
+- `/api/history` + `src/history.js` (last successful send per phone) are
+  live but unused by the UI since the column was removed — a future
+  "history" view or export can build on them.
 
 ## Author's setup (context)
 
