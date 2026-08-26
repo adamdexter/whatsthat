@@ -505,14 +505,14 @@ function renderContacts() {
       <button type="button" id="btn-hide-unselected" class="toggle ${S.hideUnselected ? 'active' : ''}" aria-pressed="${S.hideUnselected}"
         title="Show only the people who will receive the message">Hide unselected</button>
     </div>
+    <div class="count-line" id="count-line"></div>
     <table>
       <thead><tr>
         <th><input type="checkbox" id="check-all" ${allSelected ? 'checked' : ''} /></th>
         ${columns.map((h) => `<th class="col-drag" draggable="true" data-col="${esc(h)}" title="Drag to reorder columns">${esc(isPhone(h) ? 'Phone' : h)}</th>`).join('')}
       </tr></thead>
       <tbody>${rows || (S.hideUnselected ? `<tr><td colspan="${headers.length + 1}" class="muted">Nothing selected — every row is hidden. Turn off "Hide unselected" or pick people with the send rules.</td></tr>` : '')}</tbody>
-    </table>
-    <div class="count-line" id="count-line"></div>`;
+    </table>`;
 
   $('btn-inverse').onclick = () => {
     S.selected = new Set(validIds.filter((id) => !S.selected.has(id)));

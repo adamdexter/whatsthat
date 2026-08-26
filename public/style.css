@@ -558,7 +558,8 @@ th.col-drag.drop-after { box-shadow: inset -3px 0 0 var(--accent); }
 tbody tr:last-child td { border-bottom: none; }
 tr.invalid td { color: var(--muted); }
 td.phone-bad { color: var(--danger); }
-.count-line { margin-top: 10px; font-size: 12.5px; color: var(--muted); }
+/* Sits between the toolbar and the header row, closed off by its own rule */
+.count-line { margin: 8px 0 0; padding: 0 10px 8px; font-size: 12.5px; color: var(--muted); border-bottom: 1px solid var(--hairline); }
 .count-line b { color: var(--text); }
 
 /* ---------- Variable chips ---------- */

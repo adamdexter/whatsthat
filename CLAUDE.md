@@ -64,7 +64,9 @@ Sheet. Single user (Adam), ~30–40 recipients, 6–8 campaigns/year.
   v1.20.0 = hide-my-number: eye-slash on the WhatsApp pill (hover-revealed,
   persistent while masked) + "Hide my number" checkbox in the WhatsApp card;
   one `S.hideNumber` masks pill, Setup line and send/schedule confirmations;
-  persisted as `draft.hideNumber`.
+  persisted as `draft.hideNumber`;
+  v1.20.1 = contact count line moved above the header row (under the
+  toolbar, with its own rule).
 
 ## Feature map (v1.14.0)
 
