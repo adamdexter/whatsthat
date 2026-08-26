@@ -280,6 +280,11 @@ Sheet. Single user (Adam), ~30–40 recipients, 6–8 campaigns/year.
   exists, so a local `gh release create` beforehand is fine). The release
   flow is therefore: bump + commit + `git tag vX.Y.Z` + `git push origin
   main --tags` — no local build needed.
+  Gotcha: electron-builder auto-publishes when it sees a git tag (`Implicit
+  publishing triggered by git tag`) and fails without GH_TOKEN — the dist
+  script passes `--publish never`. GitHub also dropped the tag event when
+  the workflow file and the tag arrived in the same push; re-pushing the tag
+  (`git push origin :refs/tags/vX && git push origin vX`) fires it.
 
 - `npm test` — 131 unit + e2e tests (server boots in mock mode; no real
   WhatsApp/Google). e2e uses `WHATSTHAT_TICK_MS=200` for fast scheduler ticks.
