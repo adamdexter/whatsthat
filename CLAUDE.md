@@ -70,6 +70,9 @@ Sheet. Single user (Adam), ~30–40 recipients, 6–8 campaigns/year.
   rule/Field segmented choice, "Reset to automatic"). Filter chips drive
   selection; active filters persist as `draft.filters`. Manual per-contact
   checkboxes + Inverse selection remain. Unit-tested in `test/columns.test.js`.
+  `examples/*.csv` + `examples/README.md` are the documented scenarios
+  (8/12/14/20/40 contacts); `README.md` "Custom fields & send rules" quotes
+  their real classifications — regenerate both if the thresholds change.
 - **Templates**: `{{variable}}` per column, case-insensitive; `{`-triggered
   autocomplete; strict rendering (empty/unknown variable ⇒ contact fails, never
   sends a broken message); preview renders WhatsApp markup (*bold*, _italic_,

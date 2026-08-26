@@ -112,9 +112,11 @@ template variable:
 - Bare 10-digit numbers are treated as US (`+1`); international numbers
   need their country code with a leading `+`.
 - A row without a valid phone number is shown but excluded from sending.
-- Want to try it before touching your own list? Paste
-  [`examples/contacts-sample.csv`](examples/contacts-sample.csv) — fictional
-  people on reserved `555` numbers (nobody real can receive anything).
+- Want to try it before touching your own list? The [`examples/`](examples/)
+  folder has five fictional lists (dinner party, team offsite, alumni
+  reunion, golf day, a general one) on reserved `555` numbers — nobody
+  real can receive anything — each with notes on what the app makes of its
+  columns.
 
 **Google Sheets (optional).** If you'd rather load straight from a private
 Sheet, Setup (gear) → Google walks you through creating OAuth credentials
@@ -127,6 +129,66 @@ modify your sheet.
 - `node scripts/create-sheet.js contacts.csv` builds a formatted sheet
   (frozen bold header, dropdowns for columns like `Status`) from a CSV. It
   asks separately for one-time write access; the app itself stays read-only.
+
+## Custom fields & send rules
+
+WhatsThat has no fixed schema beyond `phone`. Whatever columns your
+spreadsheet has are yours to use, in two ways at once:
+
+**Every column is a variable.** `department` becomes `{{department}}`,
+`Home Course` becomes `{{Home Course}}` — names are matched
+case-insensitively and typing `{` in the message offers all of them. The app
+is strict on purpose: if a contact's value for a variable is empty, that
+contact is **failed rather than sent a message with a hole in it** (the
+preview warns you first, and offers to deselect them).
+
+**Columns whose values repeat become send rules.** A rule is a row of chips
+above the contact list — one per value — and toggling chips reselects the
+matching people. Which columns qualify is decided from your data, scaled to
+the size of the list:
+
+| Distinct values in the column | What happens |
+|---|---|
+| ≤ **max(4, 10 % of contacts)** | Becomes a send rule automatically |
+| ≤ **max(8, 25 % of contacts)**, and still repeating | The app **asks once** whether it's a rule or a per-contact field |
+| More than that, or unique per person, or the same for everyone | Stays a plain field |
+
+So with 50 contacts a column with up to 5 values is a rule on sight, one
+with 6–13 values gets a question, and one with 14+ (or a value per person)
+is a field. With 14 contacts the floors apply: up to 4 automatic, up to 8
+asked. Blank cells count as their own chip — `attending` that's either
+`Yes` or empty gives you a *(blank)* rule for "hasn't replied yet".
+
+The question looks like this, once per column, and the answer is remembered
+in your draft:
+
+> **city** has 6 different values across 14 people — is it a way to *choose
+> who gets a message*, or just information about each person?
+> [Send rule] [Per-contact field]
+
+*columns…* next to "Send rules" opens a panel listing every column with its
+current role and why (*4 values · few repeating values*, *14 values · unique
+per person*, *your choice*), a Send rule / Field switch for each, and *Reset
+to automatic*. Use it to force a 14-value column into a rule, or to keep a
+column like `manager` as text only.
+
+A worked example — a 20-person team roster:
+
+| firstName | phone | office | department | tshirtSize | manager | attending |
+|---|---|---|---|---|---|---|
+| Elena | 415-555-0108 | Lisbon | Engineering | S | Maya Okafor | |
+| Kwame | 415-555-0109 | Berlin | Design | XL | Theo Lindqvist | Yes |
+
+- `office` (4 values) and `tshirtSize` (4) → rules, automatically.
+- `attending` → rule: *Yes* / *(blank)*.
+- `department` (6) and `manager` (7) → asked. You'd say **rule** for
+  department and **field** for manager.
+- Message: *"{{firstName}}, we still need your RSVP for the offsite — reply
+  today? {{manager}} has the details."* sent to `attending = (blank)`.
+
+That file is [`examples/team-offsite.csv`](examples/team-offsite.csv); the
+other scenarios in [`examples/README.md`](examples/README.md) show the same
+rules at 8, 12, 14 and 40 people.
 
 ## Sending a campaign
 

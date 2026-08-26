@@ -1,0 +1,21 @@
+firstName,lastName,phone,email,office,department,tshirtSize,manager,attending
+Elena,Petrova,415-555-0108,elena.petrova@example.com,Lisbon,Engineering,S,Maya Okafor,
+Kwame,Mensah,415-555-0109,kwame.mensah@example.com,Berlin,Design,XL,Theo Lindqvist,Yes
+Sofia,Costa,415-555-0110,sofia.costa@example.com,Austin,Sales,L,Priya Ramaswamy,Yes
+Rafael,Ortega,415-555-0111,rafael.ortega@example.com,Remote,Support,M,Jonas Becker,Yes
+Hana,Sato,415-555-0112,hana.sato@example.com,Lisbon,Ops,S,Amara Nakamura,Yes
+Mateo,Fischer,415-555-0113,mateo.fischer@example.com,Berlin,Finance,XL,Felix Moreau,
+Zara,Rahman,415-555-0114,zara.rahman@example.com,Austin,Engineering,L,Noor Haddad,Yes
+Idris,Jensen,415-555-0115,idris.jensen@example.com,Remote,Design,M,Maya Okafor,Yes
+Lena,Novak,415-555-0116,lena.novak@example.com,Lisbon,Sales,S,Theo Lindqvist,Yes
+Omar,Farouk,415-555-0117,omar.farouk@example.com,Berlin,Support,XL,Priya Ramaswamy,Yes
+Ines,Silva,415-555-0118,ines.silva@example.com,Austin,Ops,L,Jonas Becker,
+Caleb,Brennan,415-555-0119,caleb.brennan@example.com,Remote,Finance,M,Amara Nakamura,Yes
+Yuki,Tanaka,415-555-0120,yuki.tanaka@example.com,Lisbon,Engineering,S,Felix Moreau,Yes
+Tobias,Weber,415-555-0121,tobias.weber@example.com,Berlin,Design,XL,Noor Haddad,Yes
+Aisha,Khan,415-555-0122,aisha.khan@example.com,Austin,Sales,L,Maya Okafor,Yes
+Niko,Laine,415-555-0123,niko.laine@example.com,Remote,Support,M,Theo Lindqvist,
+Greta,Schulz,415-555-0124,greta.schulz@example.com,Lisbon,Ops,S,Priya Ramaswamy,Yes
+Samir,Nasser,415-555-0125,samir.nasser@example.com,Berlin,Finance,XL,Jonas Becker,Yes
+Leila,Haidari,415-555-0126,leila.haidari@example.com,Austin,Engineering,L,Amara Nakamura,Yes
+Bruno,Rossi,415-555-0127,bruno.rossi@example.com,Remote,Design,M,Felix Moreau,Yes
