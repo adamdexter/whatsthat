@@ -52,7 +52,10 @@ Sheet. Single user (Adam), ~30–40 recipients, 6–8 campaigns/year.
   attaches dmg/zip), `examples/contacts-sample.csv`, README badges;
   v1.16.0 = scale-aware send-rule detection for any custom column
   (`public/columns.js`), ask-once for ambiguous columns, columns panel,
-  `draft.columnKinds`; sample CSV gains a `city` column.
+  `draft.columnKinds`; sample CSV gains a `city` column;
+  v1.17.0 = "Hide unselected" toggle on the contact table (constant label,
+  pressed state, count line shows "· N hidden"; persisted as
+  `draft.hideUnselected`).
 
 ## Feature map (v1.14.0)
 
@@ -69,7 +72,11 @@ Sheet. Single user (Adam), ~30–40 recipients, 6–8 campaigns/year.
   `ask` columns and a *columns…* panel (every column, its reason, a Send
   rule/Field segmented choice, "Reset to automatic"). Filter chips drive
   selection; active filters persist as `draft.filters`. Manual per-contact
-  checkboxes + Inverse selection remain. Unit-tested in `test/columns.test.js`.
+  checkboxes + Inverse selection remain, plus a **Hide unselected** toggle
+  (`button.toggle` + `aria-pressed`, label never changes — state is the
+  pressed look + "· N hidden" in the count line; unchecking a row while on
+  removes it from view; empty-state row when nothing is selected).
+  Unit-tested in `test/columns.test.js`.
   `examples/*.csv` + `examples/README.md` are the documented scenarios
   (8/12/14/20/40 contacts); `README.md` "Custom fields & send rules" quotes
   their real classifications — regenerate both if the thresholds change.

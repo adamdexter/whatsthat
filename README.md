@@ -201,7 +201,8 @@ rules at 8, 12, 14 and 40 people.
    — *send rule, or per-contact field?* — and your answer is remembered.
    *columns…* lets you change any column's role later. Fine-tune with the
    checkboxes, *select all*, or **Inverse selection** ("everyone except
-   these few").
+   these few"); **Hide unselected** collapses the table to just the people
+   who'll get the message (the count line says how many are hidden).
 3. **Write the message** — type `{` for variable autocomplete, or click a
    `{{chip}}`. WhatsApp formatting works: `*bold*`, `_italic_`,
    `~strikethrough~`, `` `code` ``. The preview renders exactly what the

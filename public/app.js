@@ -12,6 +12,7 @@ const S = {
   savedFilters: {}, // from the persisted draft, applied when contacts load
   columnKinds: {}, // header (lowercase) -> 'filter' | 'field': the user's answers, persisted in the draft
   showColumnsPanel: false,
+  hideUnselected: false, // contact table shows only selected rows (a view mode, persisted)
   previews: new Map(), // contact id -> { text, unknown, empty }
   previewId: null,
   contactsCache: null, // last loaded contact list, persisted for restore on restart
@@ -437,7 +438,9 @@ function renderContacts() {
     return;
   }
   const headers = S.headers;
+  const hidden = S.hideUnselected ? S.contacts.filter((c) => !S.selected.has(c.id)).length : 0;
   const rows = S.contacts
+    .filter((c) => !S.hideUnselected || S.selected.has(c.id))
     .map((c) => {
       const checked = S.selected.has(c.id) ? 'checked' : '';
       const disabled = c.phone ? '' : 'disabled';
@@ -459,6 +462,8 @@ function renderContacts() {
   wrap.innerHTML = `
     <div class="contacts-toolbar">
       <button type="button" id="btn-inverse">Inverse selection</button>
+      <button type="button" id="btn-hide-unselected" class="toggle ${S.hideUnselected ? 'active' : ''}" aria-pressed="${S.hideUnselected}"
+        title="Show only the people who will receive the message">Hide unselected</button>
     </div>
     <table>
       <thead><tr>
@@ -466,7 +471,7 @@ function renderContacts() {
         ${headers.filter((h) => h.toLowerCase() !== 'phone').map((h) => `<th>${esc(h)}</th>`).join('')}
         <th>Phone</th>
       </tr></thead>
-      <tbody>${rows}</tbody>
+      <tbody>${rows || (S.hideUnselected ? `<tr><td colspan="${headers.length + 1}" class="muted">Nothing selected — every row is hidden. Turn off "Hide unselected" or pick people with the send rules.</td></tr>` : '')}</tbody>
     </table>
     <div class="count-line" id="count-line"></div>`;
 
@@ -476,13 +481,19 @@ function renderContacts() {
     renderPreviewWarnings();
     saveDraft();
   };
+  $('btn-hide-unselected').onclick = () => {
+    S.hideUnselected = !S.hideUnselected;
+    renderContacts();
+    saveDraft();
+  };
 
   wrap.querySelectorAll('tbody input[type=checkbox]').forEach((cb) => {
     cb.onchange = () => {
       const id = Number(cb.dataset.id);
       if (cb.checked) S.selected.add(id);
       else S.selected.delete(id);
-      renderCountLine();
+      if (S.hideUnselected && !cb.checked) renderContacts(); // the row leaves the view
+      else renderCountLine();
       renderRunButton();
       renderPreviewWarnings();
       saveDraft();
@@ -503,8 +514,10 @@ function renderCountLine() {
   const line = $('count-line');
   if (!line) return;
   const invalid = S.contacts.filter((c) => !c.phone).length;
+  const hidden = S.hideUnselected ? S.contacts.length - S.selected.size : 0;
   line.innerHTML =
     `<b>${S.selected.size}</b> of ${S.contacts.length} contacts selected` +
+    (hidden ? ` · ${hidden} hidden` : '') +
     (invalid ? ` — <span class="st-failed">${invalid} with invalid phone numbers (excluded)</span>` : '');
   // Keep the header checkbox honest as individual rows are toggled.
   const checkAll = $('check-all');
@@ -1082,6 +1095,7 @@ const saveDraft = debounce(() => {
       activeTab: S.lastTab,
       layout: S.layout,
       columnKinds: S.columnKinds,
+      hideUnselected: S.hideUnselected,
     },
   }).catch(() => {});
 }, 600);
@@ -1166,6 +1180,7 @@ async function boot() {
   if (d.delayMaxMs) $('delay-max').value = Math.round(d.delayMaxMs / 1000);
   if (d.filters && typeof d.filters === 'object') S.savedFilters = d.filters;
   if (d.columnKinds && typeof d.columnKinds === 'object') S.columnKinds = d.columnKinds;
+  S.hideUnselected = d.hideUnselected === true;
 
   // Repopulate the contact list and selection exactly as they were before the
   // last shutdown (skipped after `npm start --fresh` — the draft is empty).
