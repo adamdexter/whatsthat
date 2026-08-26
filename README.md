@@ -232,10 +232,22 @@ The app keeps everything in `~/Library/Application Support/WhatsThat` (see
 rebuilding. `npm run app` runs the same shell from the checkout for
 development, against the same data folder.
 
+It is built to live in the menu bar: it starts at login (hidden — use the
+menu-bar icon → Open WhatsThat, or toggle *Start at Login* there), keeps the
+WhatsApp session warm so scheduled sends go out in seconds, reconnects by
+itself when WhatsApp drops the session (and tells you when it needs a QR
+scan), restarts its own engine if that ever crashes, and asks before
+quitting while sends are pending. A scheduled send that comes due while
+WhatsApp is down simply waits ("waiting for WhatsApp") and fires the moment
+the link is back — within the usual 6-hour window. If you quit anyway, the
+background scheduler (launchd, installed on your first scheduled send)
+still runs the sends with its own session; *Remove Background Scheduler* in
+the menu-bar menu turns that off.
+
 ## Development
 
 ```bash
-npm test         # 99 unit + end-to-end tests (mock mode; no real sends)
+npm test         # 114 unit + end-to-end tests (mock mode; no real sends)
 npm run mock     # run the app against a fake WhatsApp client
 ```
 

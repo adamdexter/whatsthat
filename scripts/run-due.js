@@ -8,9 +8,10 @@
 // Exits silently when nothing is due, so the every-2-min spawn costs nothing.
 
 const path = require('path');
+const fs = require('fs');
 
 const ROOT = path.join(__dirname, '..');
-const { resolveDataDir, readEngineInfo, pidAlive } = require(path.join(ROOT, 'src', 'datadir'));
+const { resolveDataDir, readEngineInfo, pidAlive, sessionLockPid } = require(path.join(ROOT, 'src', 'datadir'));
 const DATA_DIR = resolveDataDir({ rootDir: ROOT }).dir;
 const PORT = Number(process.env.PORT || 3847);
 const MOCK = process.env.WHATSTHAT_MOCK === '1';
@@ -18,6 +19,25 @@ const MOCK = process.env.WHATSTHAT_MOCK === '1';
 const { createScheduleStore } = require(path.join(ROOT, 'src', 'schedule'));
 
 const log = (msg) => console.log(`[${new Date().toISOString()}] ${msg}`);
+
+// launchd appends our stdout/stderr to scheduler.log forever (Electron-as-
+// node even prints a harmless codesign line on every start). Keep the tail.
+const LOG_MAX = 2 * 1024 * 1024;
+const LOG_KEEP = 256 * 1024;
+function trimLog(file = path.join(DATA_DIR, 'scheduler.log'), { max = LOG_MAX, keep = LOG_KEEP } = {}) {
+  try {
+    const size = fs.statSync(file).size;
+    if (size <= max) return false;
+    const fd = fs.openSync(file, 'r');
+    const buf = Buffer.alloc(keep);
+    const n = fs.readSync(fd, buf, 0, keep, size - keep);
+    fs.closeSync(fd);
+    fs.writeFileSync(file, buf.subarray(0, n)); // launchd's O_APPEND fd carries on at the new end
+    return true;
+  } catch {
+    return false;
+  }
+}
 
 // The app normally sits on 3847, but engine.local.json is authoritative
 // (an app that fell back to an ephemeral port still owns the session).
@@ -41,6 +61,7 @@ async function findRunningApp() {
 }
 
 async function main() {
+  trimLog();
   const schedule = createScheduleStore(path.join(DATA_DIR, 'schedule.local.json'));
   const due = schedule.findDue();
   if (due.length === 0) return; // the common case: nothing to do, exit quietly
@@ -54,6 +75,15 @@ async function main() {
     const res = await fetch(`http://127.0.0.1:${appPort}/api/schedule/run-due`, { method: 'POST' });
     const data = await res.json().catch(() => ({}));
     log(`App response: ${JSON.stringify(data)}`);
+    return;
+  }
+
+  // Nobody answered, but is the WhatsApp profile still open (an engine that
+  // is starting, or one that hung without a port)? Two clients on one
+  // profile is the one thing that must never happen — wait for the next tick.
+  const lockPid = sessionLockPid(DATA_DIR);
+  if (lockPid && pidAlive(lockPid)) {
+    log(`WhatsApp profile is in use by pid ${lockPid} but no app answered — skipping this tick`);
     return;
   }
 
@@ -131,7 +161,11 @@ async function main() {
   process.exit(0);
 }
 
-main().catch((err) => {
-  console.error(`[${new Date().toISOString()}] Scheduler error:`, err.message);
-  process.exit(1);
-});
+if (require.main === module) {
+  main().catch((err) => {
+    console.error(`[${new Date().toISOString()}] Scheduler error:`, err.message);
+    process.exit(1);
+  });
+}
+
+module.exports = { trimLog };

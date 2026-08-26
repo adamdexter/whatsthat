@@ -74,13 +74,14 @@ test('fixed port also announces the handshake line', async () => {
   }
 });
 
-test('WHATSTHAT_PACKAGED is exposed in state, pins the engine, and skips the launchd agent', async () => {
+test('WHATSTHAT_PACKAGED is exposed in state and pins the engine (mock still skips launchctl)', async () => {
   const server = startServer({ PORT: '3935', WHATSTHAT_PACKAGED: '1' });
   try {
     const port = await waitForHandshake(server);
     const state = await (await fetch(`http://127.0.0.1:${port}/api/state`)).json();
     assert.equal(state.packaged, true, 'packaged flag plumbed through to state');
-    assert.equal(state.agentInstalled, true, 'agent path skipped');
+    assert.equal(state.agentInstalled, true, 'agent path skipped in mock');
+    assert.equal(state.agent.mode, 'none', 'mock never touches launchctl (PACKAGED alone no longer implies NO_AGENT)');
     assert.equal(state.update.pinned, true, 'no launch-time updater in the app');
     assert.match(state.update.installed, /^\d+\.\d+\.\d+/, 'reports the bundled whatsapp-web.js version');
     assert.equal(state.engine.whatsappWebJs, state.update.installed);

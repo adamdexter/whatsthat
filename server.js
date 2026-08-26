@@ -12,7 +12,7 @@ const { parseCsv } = require('./src/csv');
 const { render } = require('./src/template');
 const { createRunner } = require('./src/runner');
 const { createWhatsApp } = require('./src/whatsapp');
-const { createScheduleStore, isAgentInstalled, installAgent } = require('./src/schedule');
+const { createScheduleStore, isAgentInstalled, agentSpec, ensureAgent, uninstallAgent, agentPaths } = require('./src/schedule');
 const { resolveDataDir, migrateData, readEngineInfo, writeEngineInfo, updateEngineInfo, removeEngineInfo, pidAlive } = require('./src/datadir');
 const { expectedBuildId } = require('./src/browser');
 
@@ -61,7 +61,9 @@ const ENGINE_INFO = (() => {
   return { whatsappWebJs, chromeBuild };
 })();
 
-const NO_AGENT = process.env.WHATSTHAT_NO_AGENT === '1' || MOCK || PACKAGED; // tests/mock/app skip launchctl
+// Tests/mock never touch launchctl. The packaged app DOES install the agent:
+// it is the fallback that sends when the app itself has been quit.
+const NO_AGENT = process.env.WHATSTHAT_NO_AGENT === '1' || MOCK;
 
 // --fresh: boot without the previous session's draft (message, loaded
 // contacts, selection). `npm start --fresh` reaches us as npm_config_fresh;
@@ -145,7 +147,10 @@ app.get('/api/state', (req, res) => {
     running: runner.isRunning(),
     lastRun,
     schedule: scheduleStore.list(),
-    agentInstalled: NO_AGENT ? true : isAgentInstalled(),
+    pendingCount: scheduleStore.list().filter((c) => c.status === 'pending').length,
+    scheduleHold: scheduleHold(),
+    agentInstalled: NO_AGENT ? true : Boolean(agentState.installed),
+    agent: agentState,
     update: PACKAGED ? { installed: ENGINE_INFO.whatsappWebJs, pinned: true } : updateStore.read(),
     engine: ENGINE_INFO,
     dataDir: DATA_DIR,
@@ -283,6 +288,61 @@ app.post('/api/run/cancel', (req, res) => {
 // ---------- Scheduled sends ----------
 const broadcastSchedule = () => broadcast('schedule', { schedule: scheduleStore.list() });
 
+// launchd fallback agent — installed on first schedule, self-repaired at
+// boot (see src/schedule.js ensureAgent). `listeningPort` is known after
+// app.listen; the plist pins PORT so run-due.js finds a fixed-port engine
+// even before engine.local.json exists.
+let listeningPort = null;
+const agentState = {
+  mode: NO_AGENT ? 'none' : 'launchd',
+  installed: NO_AGENT ? null : isAgentInstalled(),
+  plist: agentPaths().plist,
+  nodePath: null,
+  scriptPath: null,
+  checkedAt: null,
+  repairedAt: null,
+  error: null,
+};
+function currentAgentSpec() {
+  return agentSpec({ rootDir: ROOT, dataDir: DATA_DIR, packaged: PACKAGED, port: listeningPort && listeningPort !== 0 ? listeningPort : null });
+}
+function ensureAgentNow() {
+  if (NO_AGENT) return { installed: true, skipped: true };
+  const spec = currentAgentSpec();
+  agentState.nodePath = spec.nodePath;
+  agentState.scriptPath = spec.scriptPath;
+  agentState.checkedAt = new Date().toISOString();
+  try {
+    const r = ensureAgent(spec);
+    agentState.installed = true;
+    agentState.error = null;
+    if (r.repaired) {
+      agentState.repairedAt = agentState.checkedAt;
+      console.log(`launchd agent re-pointed at ${spec.nodePath} ${spec.scriptPath}`);
+    } else if (r.changed) {
+      console.log(`launchd agent installed (${spec.nodePath} ${spec.scriptPath})`);
+    }
+    return { installed: true, repaired: r.repaired };
+  } catch (err) {
+    agentState.installed = false;
+    agentState.error = `Background agent install failed: ${err.message}`;
+    console.error(agentState.error);
+    return { installed: false, error: agentState.error };
+  }
+}
+
+app.post('/api/agent/uninstall', (req, res) => {
+  if (NO_AGENT) return res.json({ agent: agentState });
+  try {
+    uninstallAgent();
+    agentState.installed = false;
+    agentState.error = null;
+    res.json({ agent: agentState });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 app.post('/api/schedule', (req, res) => {
   const { sendAt, contacts, template, delayMinMs, delayMaxMs } = req.body || {};
   const at = Date.parse(sendAt);
@@ -300,14 +360,7 @@ app.post('/api/schedule', (req, res) => {
   });
 
   // Make sure the background agent exists so this fires with the app closed.
-  let agent = { installed: true };
-  if (!NO_AGENT) {
-    try {
-      agent = isAgentInstalled() ? { installed: true } : installAgent({ rootDir: ROOT, dataDir: DATA_DIR });
-    } catch (err) {
-      agent = { installed: false, error: `Background agent install failed: ${err.message}` };
-    }
-  }
+  const agent = ensureAgentNow();
 
   broadcastSchedule();
   res.json({ campaign, agent });
@@ -321,15 +374,38 @@ app.post('/api/schedule/cancel', (req, res) => {
 });
 
 // Runs any due campaigns through the app's own WhatsApp session. Called by
-// the in-app timer and by the launchd runner when the app is open.
+// the in-app timer, by the launchd runner when the app is open, and whenever
+// WhatsApp comes back to 'ready'. A due campaign while WhatsApp is down is
+// HELD (status stays pending, so Cancel still works) and labelled so the UI
+// and tray can say why; the 6h staleness window still applies to it.
+const NUDGE_EVERY_MS = 10 * 60 * 1000;
+let lastNudgeAt = 0;
 async function executeDue() {
-  if (runner.isRunning()) return { ran: false, reason: 'a run is already in progress' };
-  if (wa.getState().status !== 'ready') return { ran: false, reason: 'whatsapp not ready' };
-  const due = scheduleStore.findDue();
+  const due = scheduleStore.findDue(); // housekeeping (missed/interrupted) runs even with WA down
   if (!due.length) return { ran: false, reason: 'nothing due' };
+  if (runner.isRunning()) return { ran: false, reason: 'a run is already in progress' };
+  const waStatus = wa.getState().status;
+  if (waStatus !== 'ready') {
+    const waitReason = `WhatsApp is ${waStatus}`;
+    const now = new Date().toISOString();
+    let changed = false;
+    for (const c of due) {
+      if (c.waitReason !== waitReason) {
+        scheduleStore.patch(c.id, { waitingSince: c.waitingSince || now, waitReason });
+        changed = true;
+      }
+    }
+    if (changed) broadcastSchedule();
+    // A dead link gets a nudge (bounded); a QR needs a human, never nudge that.
+    if ((waStatus === 'disconnected' || waStatus === 'error') && wa.reconnect && Date.now() - lastNudgeAt > NUDGE_EVERY_MS) {
+      lastNudgeAt = Date.now();
+      wa.reconnect().catch(() => {});
+    }
+    return { ran: false, reason: 'whatsapp not ready', waiting: due.length };
+  }
 
   for (const campaign of due) {
-    scheduleStore.patch(campaign.id, { status: 'running', startedAt: new Date().toISOString() });
+    scheduleStore.patch(campaign.id, { status: 'running', startedAt: new Date().toISOString(), waitingSince: null, waitReason: null });
     broadcastSchedule();
     try {
       const { summary, reportFile } = await runner.start({
@@ -362,6 +438,28 @@ app.post('/api/schedule/run-due', async (req, res) => {
 
 const TICK_MS = Number(process.env.WHATSTHAT_TICK_MS) || 30000;
 setInterval(() => executeDue().catch(() => {}), TICK_MS);
+// A held campaign fires seconds after WhatsApp is back, not at the next tick.
+wa.onUpdate((s) => {
+  if (s.status === 'ready') executeDue().catch(() => {});
+});
+
+const scheduleHold = () => {
+  const waiting = scheduleStore.list().filter((c) => c.status === 'pending' && c.waitReason);
+  if (!waiting.length) return null;
+  return { count: waiting.length, since: waiting.map((c) => c.waitingSince).sort()[0] || null, reason: waiting[0].waitReason };
+};
+
+// Manual relaunch of the WhatsApp client (tray "Reconnect WhatsApp").
+app.post('/api/whatsapp/reconnect', async (req, res) => {
+  if (runner.isRunning()) return res.status(409).json({ error: 'A send is in progress — reconnecting would interrupt it' });
+  if (!wa.reconnect) return res.status(501).json({ error: 'Reconnect is not supported by this client' });
+  try {
+    await wa.reconnect();
+    res.json({ ok: true, wa: wa.getState() });
+  } catch (err) {
+    res.status(409).json({ error: err.message });
+  }
+});
 
 // ---------- Reports ----------
 app.get('/api/reports', (req, res) => {
@@ -388,6 +486,16 @@ app.get('/api/reports/:file', (req, res) => {
 // ---------- Mock helpers (tests only) ----------
 if (MOCK) {
   app.get('/api/mock/sent', (req, res) => res.json({ sent: wa._sent }));
+  // Simulate WhatsApp dropping the session (reason as whatsapp-web.js would
+  // report it) and the user relinking.
+  app.post('/api/mock/disconnect', async (req, res) => {
+    await wa._disconnect((req.body || {}).reason || 'CONFLICT');
+    res.json({ wa: wa.getState() });
+  });
+  app.post('/api/mock/relink', async (req, res) => {
+    await wa._relink();
+    res.json({ wa: wa.getState() });
+  });
 }
 
 // ---------- Boot ----------
@@ -438,6 +546,14 @@ const httpServer = app.listen(PORT, '127.0.0.1', async () => {
     mock: MOCK,
   });
 
+  listeningPort = actualPort;
+  // Repair the launchd fallback if this data dir already relies on one (the
+  // app moved/reinstalled, dev↔packaged switch, data dir change). Never
+  // creates an agent on a machine that has not scheduled anything.
+  if (!NO_AGENT && (fs.existsSync(agentPaths().plist) || scheduleStore.list().some((c) => c.status === 'pending'))) {
+    ensureAgentNow();
+  }
+
   // Machine-readable handshake — the Mac app shell parses this line.
   console.log(`whatsthat-listening ${actualPort}`);
   const url = `http://localhost:${actualPort}`;
@@ -472,6 +588,25 @@ httpServer.on('error', async (err) => {
 // have raced node's exit and left orphaned servers squatting on the port.
 let shuttingDown = false;
 process.on('exit', () => removeEngineInfo(DATA_DIR)); // only if it is ours (pid match)
+// whatsapp-web.js runs async page-event handlers with no catch; a rejection
+// there used to take the whole engine down. A resident daemon logs it and
+// lets the reconnect/liveness machinery deal with the consequences. A true
+// uncaught exception still exits non-zero (the app shell respawns us) after
+// closing the browser so the session lock is released.
+process.on('unhandledRejection', (err) => {
+  console.error('unhandledRejection (kept running):', err && err.stack ? err.stack : err);
+});
+process.on('uncaughtException', async (err) => {
+  console.error('uncaughtException — shutting down:', err && err.stack ? err.stack : err);
+  const force = setTimeout(() => process.exit(70), 5000);
+  if (force.unref) force.unref();
+  try {
+    await wa.destroy?.();
+  } catch {
+    /* browser already gone */
+  }
+  process.exit(70);
+});
 for (const sig of ['SIGINT', 'SIGTERM']) {
   process.on(sig, async () => {
     if (shuttingDown) process.exit(130);

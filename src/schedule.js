@@ -77,7 +77,10 @@ function createScheduleStore(file) {
 // ---------- launchd background agent ----------
 // One agent, fired every 2 minutes, runs scripts/run-due.js which exits
 // immediately when nothing is due. This is what makes scheduled sends work
-// with the app and terminal closed.
+// with the app and terminal closed — and, for the resident Mac app, the
+// fallback when the app itself was quit. The dev checkout and the packaged
+// app share the label: whichever booted last owns the agent, and each
+// repairs it (ensureAgent) on its next boot.
 
 const AGENT_LABEL = 'net.whatsthat.scheduler';
 
@@ -86,8 +89,19 @@ function agentPaths() {
   return { plist, label: AGENT_LABEL };
 }
 
-function agentPlistXml({ nodePath, scriptPath, logPath, intervalSec = 120 }) {
-  const escXml = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+const escXml = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+
+function agentPlistXml({ nodePath, scriptPath, logPath, intervalSec = 120, env = null }) {
+  const envXml =
+    env && Object.keys(env).length
+      ? `
+  <key>EnvironmentVariables</key>
+  <dict>
+${Object.entries(env)
+  .map(([k, v]) => `    <key>${escXml(k)}</key><string>${escXml(v)}</string>`)
+  .join('\n')}
+  </dict>`
+      : '';
   return `<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
@@ -99,13 +113,32 @@ function agentPlistXml({ nodePath, scriptPath, logPath, intervalSec = 120 }) {
     <string>${escXml(scriptPath)}</string>
   </array>
   <key>StartInterval</key><integer>${intervalSec}</integer>
-  <key>RunAtLoad</key><false/>
+  <key>RunAtLoad</key><false/>${envXml}
   <key>StandardOutPath</key><string>${escXml(logPath)}</string>
   <key>StandardErrorPath</key><string>${escXml(logPath)}</string>
 </dict>
 </plist>
 `;
 }
+
+// What the agent should run for THIS engine. Packaged: the app's own binary
+// as node (ELECTRON_RUN_AS_NODE) against the unpacked scripts/run-due.js,
+// with the data dir spelled out (launchd starts with an empty env).
+function agentSpec({ rootDir, dataDir = rootDir, packaged = false, execPath = process.execPath, env = process.env, port = null } = {}) {
+  return {
+    nodePath: packaged ? execPath : stableNodePath(),
+    scriptPath: path.join(rootDir, 'scripts', 'run-due.js'),
+    logPath: path.join(dataDir, 'scheduler.log'),
+    env: {
+      WHATSTHAT_DATA_DIR: dataDir,
+      ...(port ? { PORT: String(port) } : {}),
+      ...(packaged ? { ELECTRON_RUN_AS_NODE: '1', WHATSTHAT_PACKAGED: '1' } : {}),
+      ...(env.WHATSTHAT_CHROME ? { WHATSTHAT_CHROME: env.WHATSTHAT_CHROME } : {}),
+    },
+  };
+}
+
+const launchctl = (args) => execFileSync('launchctl', args, { stdio: 'ignore' });
 
 function isAgentInstalled() {
   try {
@@ -125,30 +158,47 @@ function stableNodePath() {
   return process.execPath;
 }
 
-function installAgent({ rootDir, dataDir = rootDir }) {
-  const { plist } = agentPaths();
-  const xml = agentPlistXml({
-    nodePath: stableNodePath(),
-    scriptPath: path.join(rootDir, 'scripts', 'run-due.js'),
-    logPath: path.join(dataDir, 'scheduler.log'),
-  });
+// `spec` is an agentSpec() result (or { rootDir, dataDir } for the old
+// call shape). `exec`/`plistPath` are injectable for tests.
+function installAgent(spec, { exec = launchctl, plistPath } = {}) {
+  if (!spec.scriptPath) spec = agentSpec(spec);
+  const plist = plistPath || agentPaths().plist;
   fs.mkdirSync(path.dirname(plist), { recursive: true });
-  fs.writeFileSync(plist, xml);
+  fs.writeFileSync(plist, agentPlistXml(spec));
   const domain = `gui/${process.getuid()}`;
   try {
-    execFileSync('launchctl', ['bootout', domain, plist], { stdio: 'ignore' });
+    exec(['bootout', domain, plist]);
   } catch {
     /* not loaded yet — fine */
   }
-  execFileSync('launchctl', ['bootstrap', domain, plist], { stdio: 'ignore' });
+  exec(['bootstrap', domain, plist]);
   return { installed: true, plist };
 }
 
-function uninstallAgent() {
-  const { plist } = agentPaths();
+// Self-repair: (re)install only when the on-disk plist differs from what
+// this engine wants (app moved, reinstalled, dev↔packaged, data dir change)
+// or launchd no longer has it loaded. Deterministic rendering makes a
+// string compare sufficient.
+function ensureAgent(spec, { exec = launchctl, plistPath, installed = isAgentInstalled } = {}) {
+  if (!spec.scriptPath) spec = agentSpec(spec);
+  const plist = plistPath || agentPaths().plist;
+  const desired = agentPlistXml(spec);
+  let current = null;
+  try {
+    current = fs.readFileSync(plist, 'utf8');
+  } catch {
+    /* not installed */
+  }
+  if (current === desired && installed()) return { installed: true, plist, changed: false, repaired: false };
+  installAgent(spec, { exec, plistPath: plist });
+  return { installed: true, plist, changed: true, repaired: Boolean(current) && current !== desired };
+}
+
+function uninstallAgent({ exec = launchctl, plistPath } = {}) {
+  const plist = plistPath || agentPaths().plist;
   const domain = `gui/${process.getuid()}`;
   try {
-    execFileSync('launchctl', ['bootout', domain, plist], { stdio: 'ignore' });
+    exec(['bootout', domain, plist]);
   } catch {
     /* wasn't loaded */
   }
@@ -157,6 +207,7 @@ function uninstallAgent() {
   } catch {
     /* wasn't there */
   }
+  return { installed: false, plist };
 }
 
 module.exports = {
@@ -164,8 +215,11 @@ module.exports = {
   agentPlistXml,
   agentPaths,
   isAgentInstalled,
+  agentSpec,
   installAgent,
+  ensureAgent,
   uninstallAgent,
+  stableNodePath,
   MAX_LATENESS_MS,
   STALE_RUNNING_MS,
   AGENT_LABEL,

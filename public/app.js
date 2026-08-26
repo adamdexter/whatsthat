@@ -837,7 +837,8 @@ function renderSchedule() {
         let detail = '';
         if (c.status === 'pending') {
           const ms = Date.parse(c.sendAt) - Date.now();
-          detail = `${ms > 0 ? `in ${relTime(ms)}` : 'due now'} <button class="sched-cancel" data-id="${esc(c.id)}">Cancel</button>`;
+          const when = ms > 0 ? `in ${relTime(ms)}` : c.waitReason ? `<span class="sched-err">due — waiting for WhatsApp (${esc(c.waitReason)})</span>` : 'due now';
+          detail = `${when} <button class="sched-cancel" data-id="${esc(c.id)}">Cancel</button>`;
         } else if (c.status === 'running') {
           detail = 'sending now…';
         } else if (c.status === 'done' && c.summary) {

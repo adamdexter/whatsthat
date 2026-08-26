@@ -5,7 +5,7 @@ const assert = require('node:assert');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
-const { createScheduleStore, agentPlistXml, MAX_LATENESS_MS, STALE_RUNNING_MS } = require('../src/schedule');
+const { createScheduleStore, agentPlistXml, agentSpec, ensureAgent, uninstallAgent, MAX_LATENESS_MS, STALE_RUNNING_MS } = require('../src/schedule');
 
 function tmpStore() {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'whatsthat-sched-'));
@@ -65,4 +65,68 @@ test('agent plist is valid and escapes paths', () => {
   assert.match(xml, /<key>StartInterval<\/key><integer>120<\/integer>/);
   assert.ok(xml.includes('/Users/x &amp; y/run-due.js'));
   assert.ok(!xml.includes('x & y')); // raw ampersand must not survive
+  assert.ok(!xml.includes('EnvironmentVariables'), 'no env block unless asked');
+});
+
+test('agent plist carries the environment launchd would otherwise drop', () => {
+  const xml = agentPlistXml({
+    nodePath: '/Applications/WhatsThat.app/Contents/MacOS/WhatsThat',
+    scriptPath: '/Applications/WhatsThat.app/Contents/Resources/app/scripts/run-due.js',
+    logPath: '/Users/x/Library/Application Support/WhatsThat/scheduler.log',
+    env: { ELECTRON_RUN_AS_NODE: '1', WHATSTHAT_DATA_DIR: '/Users/x & y/AS' },
+  });
+  assert.match(xml, /<key>EnvironmentVariables<\/key>\s*<dict>/);
+  assert.ok(xml.includes('<key>ELECTRON_RUN_AS_NODE</key><string>1</string>'));
+  assert.ok(xml.includes('<key>WHATSTHAT_DATA_DIR</key><string>/Users/x &amp; y/AS</string>'));
+});
+
+test('agentSpec: packaged runs the app binary as node with the data dir spelled out', () => {
+  const pk = agentSpec({ rootDir: '/App/Contents/Resources/app', dataDir: '/AS', packaged: true, execPath: '/App/Contents/MacOS/WhatsThat', env: {}, port: 3847 });
+  assert.equal(pk.nodePath, '/App/Contents/MacOS/WhatsThat');
+  assert.equal(pk.scriptPath, '/App/Contents/Resources/app/scripts/run-due.js');
+  assert.equal(pk.logPath, '/AS/scheduler.log');
+  assert.deepEqual(pk.env, { WHATSTHAT_DATA_DIR: '/AS', PORT: '3847', ELECTRON_RUN_AS_NODE: '1', WHATSTHAT_PACKAGED: '1' });
+  const dev = agentSpec({ rootDir: '/repo', env: { WHATSTHAT_CHROME: '/x/chrome' } });
+  assert.notEqual(dev.nodePath, '/App/Contents/MacOS/WhatsThat');
+  assert.ok(!('ELECTRON_RUN_AS_NODE' in dev.env));
+  assert.equal(dev.env.WHATSTHAT_CHROME, '/x/chrome');
+  assert.equal(dev.logPath, '/repo/scheduler.log');
+});
+
+test('ensureAgent installs once, no-ops when unchanged, repairs when the spec moves', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'whatsthat-agent-'));
+  const plistPath = path.join(dir, 'LaunchAgents', 'net.whatsthat.scheduler.plist');
+  const calls = [];
+  const exec = (args) => calls.push(args[0]);
+  let loaded = false;
+  const installed = () => loaded;
+  const spec = agentSpec({ rootDir: '/repo-a', dataDir: '/data', env: {} });
+
+  let r = ensureAgent(spec, { exec, plistPath, installed });
+  assert.deepEqual(r, { installed: true, plist: plistPath, changed: true, repaired: false });
+  assert.deepEqual(calls, ['bootout', 'bootstrap']);
+  assert.ok(fs.existsSync(plistPath));
+  loaded = true;
+
+  calls.length = 0;
+  r = ensureAgent(spec, { exec, plistPath, installed });
+  assert.equal(r.changed, false);
+  assert.deepEqual(calls, [], 'identical spec + loaded ⇒ launchctl untouched');
+
+  r = ensureAgent(agentSpec({ rootDir: '/repo-b', dataDir: '/data', env: {} }), { exec, plistPath, installed });
+  assert.equal(r.repaired, true);
+  assert.deepEqual(calls, ['bootout', 'bootstrap']);
+  assert.ok(fs.readFileSync(plistPath, 'utf8').includes('/repo-b/scripts/run-due.js'));
+
+  calls.length = 0;
+  loaded = false;
+  r = ensureAgent(agentSpec({ rootDir: '/repo-b', dataDir: '/data', env: {} }), { exec, plistPath, installed });
+  assert.equal(r.changed, true, 'same plist but not loaded ⇒ bootstrap again');
+  assert.equal(r.repaired, false);
+
+  calls.length = 0;
+  r = uninstallAgent({ exec, plistPath });
+  assert.equal(r.installed, false);
+  assert.deepEqual(calls, ['bootout']);
+  assert.ok(!fs.existsSync(plistPath));
 });

@@ -28,9 +28,14 @@ Sheet. Single user (Adam), ~30–40 recipients, 6–8 campaigns/year.
   v1.9.0 = WhatsThat.app (electron-builder, unsigned, asar off), data dir in
   ~/Library/Application Support/WhatsThat + one-time migration, Chromium via
   @puppeteer/browsers, engine pinned in the app, `engine.local.json`
-  occupancy file, app + tray icons.
+  occupancy file, app + tray icons;
+  v1.10.0 = resident resilience: WhatsApp auto-reconnect with backoff +
+  liveness probe, scheduler holds ("waiting for WhatsApp") + nudges, launchd
+  fallback runs the .app's own binary with a self-repairing plist, shell
+  engine auto-respawn, login item + hidden launch, quit guard, notifications,
+  richer tray.
 
-## Feature map (v1.9.0)
+## Feature map (v1.10.0)
 
 - **Contacts**: Google Sheet (OAuth, read-only scope) or pasted CSV/TSV; row 1
   headers, `phone` column required; E.164 normalization (bare 10-digit → +1).
@@ -130,11 +135,85 @@ Sheet. Single user (Adam), ~30–40 recipients, 6–8 campaigns/year.
   library. Progress rides `wa.browser {status, percent, source}` on the
   normal `wa_state` SSE; the UI shows a bar, the tray a percentage. Chromium
   is never bundled in the app.
+- **Resident resilience** (v1.10.0). *Engine* (`src/whatsapp.js`): every
+  recoverable failure funnels into a single-flight `relaunch(reason)`
+  (destroy → initialize) with backoff 5s/15s/45s/2m/5m and a budget of 5
+  attempts that resets after 10 min of `ready` or on a manual reconnect;
+  the startup watchdog is just another caller of it. `retrying` is held only
+  while scheduling/destroying (NOT while the new initialize() is pending) so
+  the watchdog can interrupt a stalled relaunch; a generation counter tells
+  a superseded initialize() its rejection is expected. `'disconnected'`
+  reasons are classified (`classifyDisconnect`): LOGOUT/UNPAIRED* ⇒ *relink*
+  (status `disconnected`, QR needed — LOGOUT re-injects by itself, UNPAIRED
+  gets one budget-free relaunch to surface the QR); TOS_BLOCK/SMB_TOS_BLOCK/
+  PROXYBLOCK ⇒ *fatal* (`error`, no retry); everything else ⇒ relaunch.
+  `takeoverOnConflict: true` (15 s): the app reclaims the session when
+  web.whatsapp.com is opened elsewhere. **Liveness probe** every 3 min while
+  `ready`: `client.getState()` raced against 20 s — a throw/null means the
+  page is gone (wwebjs emits nothing for that) ⇒ relaunch; non-CONNECTED 3×
+  ⇒ `resetState()`, 5× ⇒ relaunch. State exposes `reconnect {attempts, max,
+  lastReason, nextAt, count}`, `liveness`, `readyAt`. `POST
+  /api/whatsapp/reconnect` (409 mid-run); MOCK-only `POST /api/mock/disconnect
+  {reason}` / `/api/mock/relink` drive the tests. `unhandledRejection` now
+  logs instead of killing the engine; `uncaughtException` closes the browser
+  and exits 70 (the shell respawns). *Scheduler*: `executeDue` runs
+  `findDue()` housekeeping FIRST (staleness applies even with WA down), then
+  holds due campaigns while WA ≠ ready — status stays `pending` (Cancel
+  works), `waitingSince`/`waitReason` set, `/api/state.scheduleHold` +
+  `pendingCount`, UI shows "due — waiting for WhatsApp (…)"; a ready
+  transition fires `executeDue` immediately; a `disconnected|error` hold
+  nudges `wa.reconnect()` at most every 10 min (never on `qr`). *launchd
+  fallback*: `NO_AGENT = env || MOCK` (PACKAGED no longer implies it);
+  `agentSpec()` builds the plist for THIS engine — packaged: the .app binary
+  as node (`ELECTRON_RUN_AS_NODE`) + unpacked `scripts/run-due.js`, with
+  `EnvironmentVariables` (`WHATSTHAT_DATA_DIR`, `PORT`, `WHATSTHAT_PACKAGED`,
+  `WHATSTHAT_CHROME` if set) because launchd starts with an empty env;
+  `ensureAgent()` compares the rendered plist with the file on disk and
+  re-bootstraps only on change or when unloaded — called on every boot when a
+  plist exists or campaigns are pending (self-repair after move/reinstall/
+  dev↔packaged; both share the label, last boot wins) and from `POST
+  /api/schedule`; `/api/state.agent {mode, installed, plist, nodePath,
+  scriptPath, repairedAt, error}`; `POST /api/agent/uninstall`.
+  `run-due.js` probes `engine.local.json`'s port, then `PORT`, then 3847,
+  and refuses to boot its own client while the profile's `SingletonLock`
+  pid is alive. *Shell* (`app/main.js`): bounded engine auto-respawn (3 in 10
+  min, 2s/10s/30s; the window is re-pointed at the new port; a stale child's
+  exit is ignored via identity check; budget exhausted ⇒ one dialog with
+  "Restart engine"); login item enrolled once on the first packaged boot
+  (`shell/shell.local.json` flag; tray checkbox afterwards;
+  `requires-approval` opens System Settings; lost registration re-applied);
+  hidden launch = `--hidden` / `WHATSTHAT_HIDDEN=1` / `wasOpenedAtLogin` /
+  (openAtLogin && uptime < 5 min) ⇒ dock hidden, no window until "Open";
+  quit guard on `before-quit` when we own the engine and sends are pending
+  or running (wording depends on whether the launchd fallback is installed;
+  `powerMonitor shutdown` quits silently; attach mode never guards);
+  notifications by poll-and-diff every 15 s (campaign done/failed/missed,
+  hold > 2 min, WA needs a human — click opens the window; the first poll
+  only seeds); tray glyph next to the template icon (`…` starting, `!`
+  attention), rows for reconnecting/hold/engine state, Reconnect WhatsApp,
+  Open Reports Folder, Start at Login, Remove Background Scheduler.
+  `shell/shell.log` records all of it.
 
 ## Testing
 
-- `npm test` — 99 unit + e2e tests (server boots in mock mode; no real
+- `npm test` — 114 unit + e2e tests (server boots in mock mode; no real
   WhatsApp/Google). e2e uses `WHATSTHAT_TICK_MS=200` for fast scheduler ticks.
+  `test/resilience.test.js` drives holds/reconnects through the mock hooks;
+  `test/run-due.test.js` runs the real `scripts/run-due.js` against a mock
+  engine (delegation, discovery, lock refusal).
+- Shell resilience smoke (dev, mock): boot `npm run app` with a tmp data dir,
+  `kill -9` the pid in `engine.local.json` → `shell/shell.log` shows
+  "engine restart 1/3 in 2s" then "engine back on port …", `/api/state`
+  answers again, quit is clean. Packaged (real session): `open -a WhatsThat`
+  → `shell.log` shows "login item enabled → {status:'enabled'…}" once;
+  `open -a WhatsThat --args --hidden` → System Events counts 0 windows;
+  scheduling a send to yourself 2 days out then cancelling installs the
+  launchd plist (`cat ~/Library/LaunchAgents/net.whatsthat.scheduler.plist`
+  shows the .app binary + EnvironmentVariables; `launchctl print
+  gui/$(id -u)/net.whatsthat.scheduler`) and leaves it installed. Never
+  quit with a pending send in an automated check — the quit guard dialog
+  blocks. A real login → menu-bar-only launch is the one thing only the user
+  can verify (`wasOpenedAtLogin` + the uptime heuristic).
 - Packaged app: `npm run dist` (verify-build runs automatically), then a mock
   smoke by running the binary directly — `open -a` drops env:
   `WHATSTHAT_MOCK=1 WHATSTHAT_DATA_DIR=$(mktemp -d) PORT=3852
@@ -277,14 +356,14 @@ native design system v1.7.0, **Phase B split into three increments**):
 - **v1.9.0 (shipped)**: electron-builder packaging, data in Application
   Support + one-time migration, Chromium via @puppeteer/browsers, engine
   pinned per release, app icon. Unsigned personal build.
-- **v1.10.0 (next)**: resident-scheduling resilience — WhatsApp auto-reconnect
-  with backoff + liveness probe (wwebjs emits nothing when Chromium dies),
-  scheduler "waiting for WhatsApp" hold + nudges, launchd fallback pointing at
-  the .app's own binary with self-repairing plist (`NO_AGENT` stops implying
-  from `PACKAGED`), shell engine auto-respawn, login item (hidden/menu-bar
-  launch), quit guard when sends are pending, macOS notifications, richer
-  tray. Decisions already made: `takeoverOnConflict: true` (app reclaims the
-  session 15 s after web.whatsapp.com is opened elsewhere).
+- **v1.10.0 (shipped 2026-08-25)**: resident-scheduling resilience (see the
+  feature map). Live-verified on the packaged app: login item enrolled
+  (`enabled`, no approval prompt on this Mac), `--hidden` launch has no
+  window, launchd fallback plist installed pointing at the .app binary and
+  loaded, engine auto-respawn (dev). **Not yet exercised live**: a real
+  WhatsApp drop/reconnect, the liveness probe catching a dead page, the
+  quit-guard dialog, notifications, and a login-time hidden launch (needs
+  the user to log out/in and glance at `shell/shell.log`).
 - **v1.11.0**: API hardening (Host check, token cookie/header, OAuth `state`
   nonce, `/api/ping`), engine log file, CSV-first contacts, in-app draft
   reset, reports reveal, `googleapis` → `@googleapis/sheets` (−200 MB),
@@ -299,7 +378,9 @@ Outstanding / watchlist:
   above. The packaged app is unaffected until rebuilt (engine pinned). Track
   the LID/PN work upstream (PRs #201839/#201850/#201853, issues #201849/#201857).
 - **Auto-updater's real-install path** has only run against fakes.
-- **Watchdog relaunch** (v1.4.0) has never fired against a real wedge.
+- **Watchdog relaunch / auto-reconnect / liveness probe** have never fired
+  against a real wedge or drop. The launchd agent IS now installed on this
+  Mac (packaged spec) and ticks every 2 min.
 - The repo checkout still holds the pre-migration copies of `.wwebjs_auth/`,
   `draft.local.json`, `google.local.json`, `reports/` (left in place by
   design). Safe to delete once the user is happy with the app.
